@@ -2,6 +2,7 @@
 #include <future>
 #include <mutex>
 #include <node.h>
+#include <sstream>
 
 using namespace v8;
 using namespace node;
@@ -23,76 +24,61 @@ static std::unordered_map<v8::Isolate *, ThreadInfo> threads = {};
 
 // Function to be called when an isolate's execution is interrupted
 static void ExecutionInterrupted(Isolate *isolate, void *data) {
-  auto promise = static_cast<std::promise<Local<Array>> *>(data);
+  auto promise = static_cast<std::promise<std::string> *>(data);
   auto stack = StackTrace::CurrentStackTrace(isolate, kMaxStackFrames,
                                              StackTrace::kDetailed);
 
   if (stack.IsEmpty()) {
-    promise->set_value(Array::New(isolate, 0));
+    promise->set_value("");
     return;
   }
 
-  auto frames = Array::New(isolate, stack->GetFrameCount());
+  std::ostringstream stack_stream;
 
   for (int i = 0; i < stack->GetFrameCount(); i++) {
     auto frame = stack->GetFrame(isolate, i);
     auto fn_name = frame->GetFunctionName();
 
+    // Build stack trace line in JavaScript format:
+    // "    at functionName(filename:line:column)"
+    stack_stream << "    at ";
     if (frame->IsEval()) {
-      fn_name =
-          String::NewFromUtf8(isolate, "[eval]", NewStringType::kInternalized)
-              .ToLocalChecked();
+      stack_stream << "[eval]";
     } else if (fn_name.IsEmpty() || fn_name->Length() == 0) {
-      fn_name = String::NewFromUtf8(isolate, "?", NewStringType::kInternalized)
-                    .ToLocalChecked();
+      stack_stream << "?";
     } else if (frame->IsConstructor()) {
-      fn_name = String::NewFromUtf8(isolate, "[constructor]",
-                                    NewStringType::kInternalized)
-                    .ToLocalChecked();
+      stack_stream << "[constructor]";
+    } else {
+      v8::String::Utf8Value utf8_fn(isolate, fn_name);
+      stack_stream << (*utf8_fn ? *utf8_fn : "?");
     }
 
-    auto frame_obj = Object::New(isolate);
-    frame_obj
-        ->Set(isolate->GetCurrentContext(),
-              String::NewFromUtf8(isolate, "function",
-                                  NewStringType::kInternalized)
-                  .ToLocalChecked(),
-              fn_name)
-        .Check();
+    stack_stream << " (";
 
-    frame_obj
-        ->Set(isolate->GetCurrentContext(),
-              String::NewFromUtf8(isolate, "filename",
-                                  NewStringType::kInternalized)
-                  .ToLocalChecked(),
-              frame->GetScriptName())
-        .Check();
+    auto script_name = frame->GetScriptName();
+    if (!script_name.IsEmpty()) {
+      v8::String::Utf8Value utf8_filename(isolate, script_name);
+      stack_stream << (*utf8_filename ? *utf8_filename : "<unknown>");
+    } else {
+      stack_stream << "<unknown>";
+    }
 
-    frame_obj
-        ->Set(
-            isolate->GetCurrentContext(),
-            String::NewFromUtf8(isolate, "lineno", NewStringType::kInternalized)
-                .ToLocalChecked(),
-            Integer::New(isolate, frame->GetLineNumber()))
-        .Check();
+    int line_number = frame->GetLineNumber();
+    int column_number = frame->GetColumn();
 
-    frame_obj
-        ->Set(
-            isolate->GetCurrentContext(),
-            String::NewFromUtf8(isolate, "colno", NewStringType::kInternalized)
-                .ToLocalChecked(),
-            Integer::New(isolate, frame->GetColumn()))
-        .Check();
+    stack_stream << ":" << line_number << ":" << column_number << ")";
 
-    frames->Set(isolate->GetCurrentContext(), i, frame_obj).Check();
+    if (i < stack->GetFrameCount() - 1) {
+      stack_stream << "\n";
+    }
   }
 
-  promise->set_value(frames);
+  promise->set_value(stack_stream.str());
 }
 
 // Function to capture the stack trace of a single isolate
-Local<Array> CaptureStackTrace(Isolate *isolate) {
-  std::promise<Local<Array>> promise;
+std::string CaptureStackTrace(Isolate *isolate) {
+  std::promise<std::string> promise;
   auto future = promise.get_future();
 
   // The v8 isolate must be interrupted to capture the stack trace
@@ -105,7 +91,7 @@ Local<Array> CaptureStackTrace(Isolate *isolate) {
 void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
   auto capture_from_isolate = args.GetIsolate();
 
-  using ThreadResult = std::tuple<std::string, Local<Array>>;
+  using ThreadResult = std::tuple<std::string, std::string>;
   std::vector<std::future<ThreadResult>> futures;
 
   // We collect the futures into a vec so they can be processed in parallel
@@ -128,13 +114,17 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
   // JavaScript object
   Local<Object> result = Object::New(capture_from_isolate);
   for (auto &future : futures) {
-    auto [thread_name, frames] = future.get();
+    auto [thread_name, stack_string] = future.get();
 
     auto key = String::NewFromUtf8(capture_from_isolate, thread_name.c_str(),
                                    NewStringType::kNormal)
                    .ToLocalChecked();
 
-    result->Set(capture_from_isolate->GetCurrentContext(), key, frames).Check();
+    auto value = String::NewFromUtf8(capture_from_isolate, stack_string.c_str(),
+                                     NewStringType::kNormal)
+                     .ToLocalChecked();
+
+    result->Set(capture_from_isolate->GetCurrentContext(), key, value).Check();
   }
 
   args.GetReturnValue().Set(result);

@@ -16,7 +16,9 @@ registerThread();
 Watchdog thread:
 
 ```ts
-const { captureStackTrace } = require("@sentry-internal/node-native-stacktrace");
+const { captureStackTrace } = require(
+  "@sentry-internal/node-native-stacktrace",
+);
 
 const stacks = captureStackTrace();
 console.log(stacks);
@@ -26,58 +28,32 @@ Results in:
 
 ```js
 {
-  '0': [
-    {
-      function: 'from',
-      filename: 'node:buffer',
-      lineno: 298,
-      colno: 28
-    },
-    {
-      function: 'pbkdf2Sync',
-      filename: 'node:internal/crypto/pbkdf2',
-      lineno: 78,
-      colno: 17
-    },
-    {
-      function: 'longWork',
-      filename: '/app/test.js',
-      lineno: 20,
-      colno: 29
-    },
-    {
-      function: '?',
-      filename: '/app/test.js',
-      lineno: 24,
-      colno: 1
-    }
-  ],
-  '2': [
-    {
-      function: 'from',
-      filename: 'node:buffer',
-      lineno: 298,
-      colno: 28
-    },
-    {
-      function: 'pbkdf2Sync',
-      filename: 'node:internal/crypto/pbkdf2',
-      lineno: 78,
-      colno: 17
-    },
-    {
-      function: 'longWork',
-      filename: '/app/worker.js',
-      lineno: 10,
-      colno: 29
-    },
-    {
-      function: '?',
-      filename: '/app/worker.js',
-      lineno: 14,
-      colno: 1
-    }
-  ]
+   '0': '    at from (node:buffer:299:28)\n' +
+    '    at pbkdf2Sync (node:internal/crypto/pbkdf2:78:17)\n' +
+    '    at longWork (/Users/tim/test/test/long-work.js:6:25)\n' +
+    '    at ? (/Users/tim/test/test/stack-traces.js:11:1)\n' +
+    '    at ? (node:internal/modules/cjs/loader:1734:14)\n' +
+    '    at ? (node:internal/modules/cjs/loader:1899:10)\n' +
+    '    at ? (node:internal/modules/cjs/loader:1469:32)\n' +
+    '    at ? (node:internal/modules/cjs/loader:1286:12)\n' +
+    '    at traceSync (node:diagnostics_channel:322:14)\n' +
+    '    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\n' +
+    '    at executeUserEntryPoint (node:internal/modules/run_main:152:5)\n' +
+    '    at ? (node:internal/main/run_main_module:33:47)',
+  '2': '    at from (node:buffer:299:28)\n' +
+    '    at pbkdf2Sync (node:internal/crypto/pbkdf2:78:17)\n' +
+    '    at longWork (/Users/tim/test/test/long-work.js:6:25)\n' +
+    '    at ? (/Users/tim/test/test/worker.js:6:1)\n' +
+    '    at ? (node:internal/modules/cjs/loader:1734:14)\n' +
+    '    at ? (node:internal/modules/cjs/loader:1899:10)\n' +
+    '    at ? (node:internal/modules/cjs/loader:1469:32)\n' +
+    '    at ? (node:internal/modules/cjs/loader:1286:12)\n' +
+    '    at traceSync (node:diagnostics_channel:322:14)\n' +
+    '    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\n' +
+    '    at executeUserEntryPoint (node:internal/modules/run_main:152:5)\n' +
+    '    at ? (node:internal/main/worker_thread:212:26)\n' +
+    '    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:827:20)\n' +
+    '    at ? (node:internal/per_context/messageport:23:28)'
 }
 ```
 

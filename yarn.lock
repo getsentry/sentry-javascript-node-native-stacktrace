@@ -388,6 +388,11 @@
   resolved "https://registry.yarnpkg.com/@sentry-internal/typescript/-/typescript-9.22.0.tgz#7bce764807c0bb122126f29af74fc43bf863039c"
   integrity sha512-pqeMOKuzUwpMXh12ONbWUtpJ9Tey+UYnLgqPVXZEnB4vpZfJ/y4mdHsNaEXxgGLWZ+wvvSdYJB9GsGBl0iSJrQ==
 
+"@sentry/core@^9.22.0":
+  version "9.25.0"
+  resolved "https://registry.yarnpkg.com/@sentry/core/-/core-9.25.0.tgz#354b9d500075b0db1decc533c16fe0566a30c21b"
+  integrity sha512-k0AgzR6RIf6OEwkVz09zer8GcK1s7RothlS1R6Z4x1wAJ+brtx4HqWnbLp05LDNDNrjTzK30HXvuCGGusnZuig==
+
 "@types/estree@1.0.7", "@types/estree@^1.0.0":
   version "1.0.7"
   resolved "https://registry.yarnpkg.com/@types/estree/-/estree-1.0.7.tgz#4158d3105276773d5b7695cd4834b1722e4f37a8"

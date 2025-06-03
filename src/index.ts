@@ -11,16 +11,9 @@ const arch = process.env['BUILD_ARCH'] || _arch();
 const abi = getAbi(versions.node, 'node');
 const identifier = [platform, arch, stdlib, abi].filter(c => c !== undefined && c !== null).join('-');
 
-type StackFrame = {
-  function: string;
-  filename: string;
-  lineno: number;
-  colno: number;
-};
-
 interface Native {
   registerThread(threadName: string): void;
-  captureStackTrace(): Record<string, StackFrame[]>;
+  captureStackTrace(): Record<string, string>;
   getThreadsLastSeen(): Record<string, number>;
 }
 
@@ -180,7 +173,7 @@ export function registerThread(threadName: string = String(threadId)): void {
 /**
  * Captures stack traces for all registered threads.
  */
-export function captureStackTrace(): Record<string, StackFrame[]> {
+export function captureStackTrace(): Record<string, string> {
   return native.captureStackTrace();
 }
 
