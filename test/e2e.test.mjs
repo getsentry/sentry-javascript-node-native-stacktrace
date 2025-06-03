@@ -1,8 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createStackParser, nodeStackLineParser  } from '@sentry/core';
-import { beforeAll, describe, expect, test } from 'vitest';
-import { installTarballAsDependency } from './prepare.mjs';
+import { describe, expect, test } from 'vitest';
 
 const __dirname = import.meta.dirname || new URL('.', import.meta.url).pathname;
 const defaultStackParser = createStackParser(nodeStackLineParser());
@@ -14,15 +13,11 @@ function parseStacks(stacks) {
 }
 
 describe('e2e Tests', { timeout: 20000 }, () => {
-  beforeAll(() => {
-    installTarballAsDependency(__dirname);
-  });
-
   test('Capture stack trace from multiple threads', () => {
     const testFile = join(__dirname, 'stack-traces.js');
     const result = spawnSync('node', [testFile])
 
-    expect(result.status).toBe(0);
+    expect(result.status).toEqual(0);
 
     const stacks = parseStacks(JSON.parse(result.stdout.toString()));
 
@@ -85,7 +80,7 @@ describe('e2e Tests', { timeout: 20000 }, () => {
     const testFile = join(__dirname, 'stalled.js');
     const result = spawnSync('node', [testFile]);
 
-    expect(result.status).toBe(0);
+    expect(result.status).toEqual(0);
 
     const stacks = parseStacks(JSON.parse(result.stdout.toString()));
 

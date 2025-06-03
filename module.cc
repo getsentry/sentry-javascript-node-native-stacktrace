@@ -35,7 +35,8 @@ static void ExecutionInterrupted(Isolate *isolate, void *data) {
 
   std::ostringstream stack_stream;
 
-  for (int i = 0; i < stack->GetFrameCount(); i++) {
+  auto length = stack->GetFrameCount();
+  for (int i = 0; i < length; i++) {
     auto frame = stack->GetFrame(isolate, i);
     auto fn_name = frame->GetFunctionName();
 
@@ -68,7 +69,7 @@ static void ExecutionInterrupted(Isolate *isolate, void *data) {
 
     stack_stream << ":" << line_number << ":" << column_number << ")";
 
-    if (i < stack->GetFrameCount() - 1) {
+    if (i < length - 1) {
       stack_stream << "\n";
     }
   }

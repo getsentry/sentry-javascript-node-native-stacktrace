@@ -21,14 +21,14 @@
     "build:dev": "yarn clean && yarn build:bindings:configure && yarn build",
     "build:tarball": "npm pack",
     "clean": "node-gyp clean && rm -rf lib && rm -rf build",
-    "test": "vitest run --silent=false --disable-console-intercept"
+    "test": "node ./test/prepare.mjs && vitest run --silent=false --disable-console-intercept"
   },
   "volta": {
     "node": "24.1.0"
   },
   "dependencies": {
     "detect-libc": "^2.0.4",
-    "node-abi": "^4.9.0"
+    "node-abi": "^3.73.0"
   },
   "devDependencies": {
     "@sentry-internal/eslint-config-sdk": "^9.22.0",
