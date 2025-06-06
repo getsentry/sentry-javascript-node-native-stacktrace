@@ -113,7 +113,8 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
       futures.emplace_back(std::async(
           std::launch::async,
           [thread_name, state](Isolate *isolate) -> ThreadResult {
-            return {thread_name, state,
+            return {.thread_name = thread_name,
+                    .state = state,
                     .stack_frames = CaptureStackTrace(isolate)};
           },
           thread_isolate));
@@ -236,8 +237,9 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
     std::lock_guard<std::mutex> lock(threads_mutex);
     auto found = threads.find(isolate);
     if (found == threads.end()) {
-      threads.emplace(
-          isolate, ThreadInfo{thread_name, milliseconds::zero(), .state = ""});
+      threads.emplace(isolate, ThreadInfo{.thread_name = thread_name,
+                                          .last_seen = milliseconds::zero(),
+                                          .state = ""});
       // Register a cleanup hook to remove this thread when the isolate is
       // destroyed
       node::AddEnvironmentCleanupHook(isolate, Cleanup, isolate);
