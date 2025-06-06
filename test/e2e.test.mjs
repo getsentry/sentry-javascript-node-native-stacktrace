@@ -13,7 +13,7 @@ describe('e2e Tests', { timeout: 20000 }, () => {
 
     const stacks = JSON.parse(result.stdout.toString());
 
-    expect(stacks['0']).toEqual(expect.arrayContaining([
+    expect(stacks['0'].frames).toEqual(expect.arrayContaining([
       {
         function: 'pbkdf2Sync',
         filename: expect.any(String),
@@ -34,7 +34,7 @@ describe('e2e Tests', { timeout: 20000 }, () => {
       },
     ]));
 
-    expect(stacks['2']).toEqual(expect.arrayContaining([
+    expect(stacks['2'].frames).toEqual(expect.arrayContaining([
       {
         function: 'pbkdf2Sync',
         filename: expect.any(String),
@@ -64,7 +64,7 @@ describe('e2e Tests', { timeout: 20000 }, () => {
 
     const stacks = JSON.parse(result.stdout.toString());
 
-    expect(stacks['0']).toEqual(expect.arrayContaining([
+    expect(stacks['0'].frames).toEqual(expect.arrayContaining([
       {
         function: 'pbkdf2Sync',
         filename: expect.any(String),
@@ -85,6 +85,8 @@ describe('e2e Tests', { timeout: 20000 }, () => {
       },
     ]));
 
-    expect(stacks['2'].length).toEqual(1);
+    expect(stacks['0'].state).toEqual({ some_property: 'some_value' });
+
+    expect(stacks['2'].frames.length).toEqual(1);
   });
 });

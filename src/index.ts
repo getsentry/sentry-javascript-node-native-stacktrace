@@ -11,6 +11,11 @@ const arch = process.env['BUILD_ARCH'] || _arch();
 const abi = getAbi(versions.node, 'node');
 const identifier = [platform, arch, stdlib, abi].filter(c => c !== undefined && c !== null).join('-');
 
+type Thread<S = unknown> = {
+  frames: StackFrame[];
+  state?: S
+}
+
 type StackFrame = {
   function: string;
   filename: string;
@@ -20,7 +25,8 @@ type StackFrame = {
 
 interface Native {
   registerThread(threadName: string): void;
-  captureStackTrace(): Record<string, StackFrame[]>;
+  threadPoll(state?: object): void;
+  captureStackTrace<S = unknown>(): Record<string, Thread<S>>;
   getThreadsLastSeen(): Record<string, number>;
 }
 
@@ -178,10 +184,23 @@ export function registerThread(threadName: string = String(threadId)): void {
 }
 
 /**
+ * Tells the native module that the thread is still running and updates the state.
+ *
+ * @param state Optional state to pass to the native module.
+ */
+export function threadPoll(state?: object): void {
+  if (typeof state === 'object') {
+    native.threadPoll(state);
+  } else {
+    native.threadPoll();
+  }
+}
+
+/**
  * Captures stack traces for all registered threads.
  */
-export function captureStackTrace(): Record<string, StackFrame[]> {
-  return native.captureStackTrace();
+export function captureStackTrace<S = unknown>(): Record<string, Thread<S>> {
+  return native.captureStackTrace<S>();
 }
 
 /**

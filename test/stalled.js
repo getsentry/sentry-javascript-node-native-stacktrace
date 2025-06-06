@@ -1,9 +1,11 @@
 const { Worker } = require('node:worker_threads');
 const { longWork } = require('./long-work.js');
-const { registerThread } = require('@sentry-internal/node-native-stacktrace');
+const { registerThread, threadPoll } = require('@sentry-internal/node-native-stacktrace');
+
+registerThread();
 
 setInterval(() => {
-  registerThread();
+  threadPoll({ some_property: 'some_value' });
 }, 200).unref();
 
 const watchdog = new Worker('./test/stalled-watchdog.js');
