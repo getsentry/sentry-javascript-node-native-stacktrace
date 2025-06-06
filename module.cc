@@ -2,6 +2,7 @@
 #include <future>
 #include <mutex>
 #include <node.h>
+#include <sstream>
 
 using namespace v8;
 using namespace node;
@@ -15,6 +16,8 @@ struct ThreadInfo {
   std::string thread_name;
   // Last time this thread was seen in milliseconds since epoch
   milliseconds last_seen;
+  // Some JSON serialized state for the thread
+  std::string state;
 };
 
 static std::mutex threads_mutex;
@@ -31,6 +34,12 @@ struct JsStackFrame {
 
 // Type alias for a vector of JsStackFrame
 using JsStackTrace = std::vector<JsStackFrame>;
+
+struct ThreadResult {
+  std::string thread_name;
+  std::string state;
+  JsStackTrace stack_frames;
+};
 
 // Function to be called when an isolate's execution is interrupted
 static void ExecutionInterrupted(Isolate *isolate, void *data) {
@@ -91,7 +100,6 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
   auto capture_from_isolate = args.GetIsolate();
   auto current_context = capture_from_isolate->GetCurrentContext();
 
-  using ThreadResult = std::tuple<std::string, JsStackTrace>;
   std::vector<std::future<ThreadResult>> futures;
 
   {
@@ -100,27 +108,31 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
       if (thread_isolate == capture_from_isolate)
         continue;
       auto thread_name = thread_info.thread_name;
+      auto state = thread_info.state;
 
       futures.emplace_back(std::async(
           std::launch::async,
-          [thread_name](Isolate *isolate) -> ThreadResult {
-            return std::make_tuple(thread_name, CaptureStackTrace(isolate));
+          [thread_name, state](Isolate *isolate) -> ThreadResult {
+            return {thread_name, state,
+                    .stack_frames = CaptureStackTrace(isolate)};
           },
           thread_isolate));
     }
   }
 
-  Local<Object> result = Object::New(capture_from_isolate);
+  Local<Object> output = Object::New(capture_from_isolate);
 
   for (auto &future : futures) {
-    auto [thread_name, frames] = future.get();
-    auto key = String::NewFromUtf8(capture_from_isolate, thread_name.c_str(),
-                                   NewStringType::kNormal)
-                   .ToLocalChecked();
+    auto result = future.get();
+    auto key =
+        String::NewFromUtf8(capture_from_isolate, result.thread_name.c_str(),
+                            NewStringType::kNormal)
+            .ToLocalChecked();
 
-    Local<Array> jsFrames = Array::New(capture_from_isolate, frames.size());
-    for (size_t i = 0; i < frames.size(); ++i) {
-      const auto &f = frames[i];
+    Local<Array> jsFrames =
+        Array::New(capture_from_isolate, result.stack_frames.size());
+    for (size_t i = 0; i < result.stack_frames.size(); ++i) {
+      const auto &frame = result.stack_frames[i];
       Local<Object> frameObj = Object::New(capture_from_isolate);
       frameObj
           ->Set(current_context,
@@ -128,7 +140,7 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
                                     NewStringType::kInternalized)
                     .ToLocalChecked(),
                 String::NewFromUtf8(capture_from_isolate,
-                                    f.function_name.c_str(),
+                                    frame.function_name.c_str(),
                                     NewStringType::kNormal)
                     .ToLocalChecked())
           .Check();
@@ -137,7 +149,8 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
                 String::NewFromUtf8(capture_from_isolate, "filename",
                                     NewStringType::kInternalized)
                     .ToLocalChecked(),
-                String::NewFromUtf8(capture_from_isolate, f.filename.c_str(),
+                String::NewFromUtf8(capture_from_isolate,
+                                    frame.filename.c_str(),
                                     NewStringType::kNormal)
                     .ToLocalChecked())
           .Check();
@@ -146,23 +159,52 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
                 String::NewFromUtf8(capture_from_isolate, "lineno",
                                     NewStringType::kInternalized)
                     .ToLocalChecked(),
-                Integer::New(capture_from_isolate, f.lineno))
+                Integer::New(capture_from_isolate, frame.lineno))
           .Check();
       frameObj
           ->Set(current_context,
                 String::NewFromUtf8(capture_from_isolate, "colno",
                                     NewStringType::kInternalized)
                     .ToLocalChecked(),
-                Integer::New(capture_from_isolate, f.colno))
+                Integer::New(capture_from_isolate, frame.colno))
           .Check();
       jsFrames->Set(current_context, static_cast<uint32_t>(i), frameObj)
           .Check();
     }
 
-    result->Set(current_context, key, jsFrames).Check();
+    // Create a thread object with a 'frames' property and optional 'state'
+    Local<Object> threadObj = Object::New(capture_from_isolate);
+    threadObj
+        ->Set(current_context,
+              String::NewFromUtf8(capture_from_isolate, "frames",
+                                  NewStringType::kInternalized)
+                  .ToLocalChecked(),
+              jsFrames)
+        .Check();
+
+    if (!result.state.empty()) {
+      v8::MaybeLocal<v8::String> stateStr = v8::String::NewFromUtf8(
+          capture_from_isolate, result.state.c_str(), NewStringType::kNormal);
+      if (!stateStr.IsEmpty()) {
+        v8::MaybeLocal<v8::Value> maybeStateVal =
+            v8::JSON::Parse(current_context, stateStr.ToLocalChecked());
+        v8::Local<v8::Value> stateVal;
+        if (maybeStateVal.ToLocal(&stateVal)) {
+          threadObj
+              ->Set(current_context,
+                    String::NewFromUtf8(capture_from_isolate, "state",
+                                        NewStringType::kInternalized)
+                        .ToLocalChecked(),
+                    stateVal)
+              .Check();
+        }
+      }
+    }
+
+    output->Set(current_context, key, threadObj).Check();
   }
 
-  args.GetReturnValue().Set(result);
+  args.GetReturnValue().Set(output);
 }
 
 // Cleanup function to remove the thread from the map when the isolate is
@@ -179,9 +221,9 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
 
   if (args.Length() != 1 || !args[0]->IsString()) {
     isolate->ThrowException(Exception::Error(
-        String::NewFromUtf8(
-            isolate, "registerThread(name) requires a single name argument",
-            NewStringType::kInternalized)
+        String::NewFromUtf8(isolate,
+                            "threadStart(name) requires a single name argument",
+                            NewStringType::kInternalized)
             .ToLocalChecked()));
 
     return;
@@ -194,13 +236,39 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
     std::lock_guard<std::mutex> lock(threads_mutex);
     auto found = threads.find(isolate);
     if (found == threads.end()) {
-      threads.emplace(isolate, ThreadInfo{thread_name, milliseconds::zero()});
+      threads.emplace(
+          isolate, ThreadInfo{thread_name, milliseconds::zero(), .state = ""});
       // Register a cleanup hook to remove this thread when the isolate is
       // destroyed
       node::AddEnvironmentCleanupHook(isolate, Cleanup, isolate);
+    }
+  }
+}
+
+// Function to track a thread and set its state
+void ThreadPoll(const FunctionCallbackInfo<Value> &args) {
+  auto isolate = args.GetIsolate();
+  auto context = isolate->GetCurrentContext();
+
+  std::string state_str;
+  if (args.Length() == 1 && args[0]->IsValue()) {
+    MaybeLocal<String> maybe_json = v8::JSON::Stringify(context, args[0]);
+    if (!maybe_json.IsEmpty()) {
+      v8::String::Utf8Value utf8_state(isolate, maybe_json.ToLocalChecked());
+      state_str = *utf8_state ? *utf8_state : "";
     } else {
+      state_str = "";
+    }
+  } else {
+    state_str = "";
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(threads_mutex);
+    auto found = threads.find(isolate);
+    if (found != threads.end()) {
       auto &thread_info = found->second;
-      thread_info.thread_name = thread_name;
+      thread_info.state = state_str;
       thread_info.last_seen =
           duration_cast<milliseconds>(system_clock::now().time_since_epoch());
     }
@@ -253,6 +321,16 @@ NODE_MODULE_INITIALIZER(Local<Object> exports, Local<Value> module,
                                 NewStringType::kInternalized)
                 .ToLocalChecked(),
             FunctionTemplate::New(isolate, RegisterThread)
+                ->GetFunction(context)
+                .ToLocalChecked())
+      .Check();
+
+  exports
+      ->Set(context,
+            String::NewFromUtf8(isolate, "threadPoll",
+                                NewStringType::kInternalized)
+                .ToLocalChecked(),
+            FunctionTemplate::New(isolate, ThreadPoll)
                 ->GetFunction(context)
                 .ToLocalChecked())
       .Check();

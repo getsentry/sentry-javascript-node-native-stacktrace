@@ -1,7 +1,0 @@
-{
-  "name": "node-cpu-profiler-test",
-  "license": "MIT",
-  "dependencies": {
-    "@sentry-internal/node-native-stacktrace": "file:../sentry-internal-node-native-stacktrace-0.1.0.tgz"
-  }
-}

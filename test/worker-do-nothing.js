@@ -1,7 +1,7 @@
-const { longWork } = require('./long-work');
-const { registerThread } = require('@sentry-internal/node-native-stacktrace');
+const { registerThread, threadPoll } = require('@sentry-internal/node-native-stacktrace');
+
+registerThread();
 
 setInterval(() => {
-  registerThread();
+  threadPoll();
 }, 200);
-
