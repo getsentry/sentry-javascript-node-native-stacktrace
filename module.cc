@@ -235,7 +235,8 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
     std::lock_guard<std::mutex> lock(threads_mutex);
     auto found = threads.find(isolate);
     if (found == threads.end()) {
-      threads.emplace(isolate, ThreadInfo{thread_name, milliseconds::zero(), ""});
+      threads.emplace(isolate,
+                      ThreadInfo{thread_name, milliseconds::zero(), ""});
       // Register a cleanup hook to remove this thread when the isolate is
       // destroyed
       node::AddEnvironmentCleanupHook(isolate, Cleanup, isolate);
