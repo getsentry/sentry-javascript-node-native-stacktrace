@@ -2,7 +2,6 @@
 #include <future>
 #include <mutex>
 #include <node.h>
-#include <sstream>
 
 using namespace v8;
 using namespace node;
