@@ -219,9 +219,9 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
 
   if (args.Length() != 1 || !args[0]->IsString()) {
     isolate->ThrowException(Exception::Error(
-        String::NewFromUtf8(isolate,
-                            "threadStart(name) requires a single name argument",
-                            NewStringType::kInternalized)
+        String::NewFromUtf8(
+            isolate, "registerThread(name) requires a single name argument",
+            NewStringType::kInternalized)
             .ToLocalChecked()));
 
     return;
