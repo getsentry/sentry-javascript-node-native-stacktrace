@@ -48,5 +48,8 @@
     "/scripts/binaries.mjs",
     "/scripts/check-build.mjs",
     "/scripts/copy-target.mjs"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
