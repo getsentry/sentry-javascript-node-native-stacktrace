@@ -1,9 +1,9 @@
 # `@sentry-internal/node-native-stacktrace`
 
 A native Node.js module that can capture JavaScript stack traces for registered
-main or worker threads, even if event loops are blocked.
+main or worker threads from any other thread, even if event loops are blocked.
 
-The module provides the means to create a watchdog system to track event loop
+The module also provides a means to create a watchdog system to track event loop
 blocking via periodic heartbeats. When the time from the last heartbeat crosses
 a threshold, JavaScript stack traces can be captured. The heartbeats can
 optionally include state information which is included with the corresponding
