@@ -1,30 +1,40 @@
 # `@sentry-internal/node-native-stacktrace`
 
-Native Node module to capture stack traces from all registered threads.
+A native Node.js module that can capture JavaScript stack traces for registered
+main or worker threads, even if event loops are blocked.
 
-This allows capturing main and worker thread stack traces from another watchdog
-thread, even if the event loops are blocked.
+The module provides the means to create a watchdog system to track event loop
+blocking via periodic heartbeats. When the time from the last heartbeat crosses
+a threshold, JavaScript stack traces can be captured. The heartbeats can
+optionally include state information which is included with the corresponding
+stack trace.
 
-In the main or worker threads:
+## Basic Usage
+
+### 1. Register threads you want to monitor
+
+In your main thread or worker threads:
 
 ```ts
-const { registerThread } = require("@sentry-internal/node-native-stacktrace");
+import { registerThread } from "@sentry-internal/node-native-stacktrace";
 
+// Register this thread for monitoring
 registerThread();
 ```
 
-Watchdog thread:
+### 2. Capture stack traces from any thread
 
 ```ts
-const {
-  captureStackTrace,
-} = require("@sentry-internal/node-native-stacktrace");
+import { captureStackTrace } from "@sentry-internal/node-native-stacktrace";
 
+// Capture stack traces from all registered threads
 const stacks = captureStackTrace();
 console.log(stacks);
 ```
 
-Results in:
+### Example Output
+
+Stack traces show where each thread is currently executing:
 
 ```js
 {
@@ -83,50 +93,99 @@ Results in:
 }
 ```
 
-## Detecting blocked event loops
+## Advanced Usage: Automatic blocked event loop Detection
 
-In the main or worker threads if you call `registerThread()` regularly, times
-are recorded.
+Set up automatic detection of blocked event loops:
+
+### 1. Set up thread heartbeats
+
+Send regular heartbeats with optional state information:
 
 ```ts
-const {
+import {
   registerThread,
   threadPoll,
-} = require("@sentry-internal/node-native-stacktrace");
+} from "@sentry-internal/node-native-stacktrace";
 
+// Register this thread
 registerThread();
 
+// Send heartbeats every 200ms with optional state
 setInterval(() => {
-  threadPoll({ optional_state: "some_value" });
+  threadPoll({
+    endpoint: "/api/current-request",
+    userId: getCurrentUserId(),
+  });
 }, 200);
 ```
 
-In the watchdog thread you can call `getThreadsLastSeen()` to get how long it's
-been in milliseconds since each thread polled.
+### 2. Monitor from a watchdog thread
 
-If any thread has exceeded a threshold, you can call `captureStackTrace()` to
-get the stack traces for all threads.
+Monitor all registered threads from a dedicated thread:
 
 ```ts
-const {
+import {
   captureStackTrace,
   getThreadsLastSeen,
-} = require("@sentry-internal/node-native-stacktrace");
+} from "@sentry-internal/node-native-stacktrace";
 
 const THRESHOLD = 1000; // 1 second
 
 setInterval(() => {
-  for (const [thread, time] in Object.entries(getThreadsLastSeen())) {
-    if (time > THRESHOLD) {
-      const threads = captureStackTrace();
-      const blockedThread = threads[thread];
-      const { frames, state } = blockedThread;
-      console.log(
-        `Thread '${thread}' blocked more than ${THRESHOLD}ms`,
-        frames,
-        state,
-      );
+  const threadsLastSeen = getThreadsLastSeen();
+
+  for (const [threadId, timeSinceLastSeen] of Object.entries(threadsLastSeen)) {
+    if (timeSinceLastSeen > THRESHOLD) {
+      // Thread appears to be blocked - capture diagnostics
+      const stackTraces = captureStackTrace();
+      const blockedThread = stackTraces[threadId];
+
+      console.error(`🚨 Thread ${threadId} blocked for ${timeSinceLastSeen}ms`);
+      console.error("Stack trace:", blockedThread.frames);
+      console.error("Last known state:", blockedThread.state);
     }
   }
-}, 1000);
+}, 500); // Check every 500ms
 ```
+
+## API Reference
+
+### Functions
+
+#### `registerThread(threadName?: string): void`
+
+Registers the current thread for monitoring. Must be called from each thread you
+want to capture stack traces from.
+
+- `threadName` (optional): Name for the thread. Defaults to the current thread
+  ID.
+
+#### `captureStackTrace<State>(): Record<string, Thread<State>>`
+
+Captures stack traces from all registered threads. Can be called from any thread
+but will not capture the stack trace of the calling thread itself.
+
+```ts
+type Thread<S> = {
+  frames: StackFrame[];
+  state?: S;
+};
+
+type StackFrame = {
+  function: string;
+  filename: string;
+  lineno: number;
+  colno: number;
+};
+```
+
+#### `threadPoll<State>(state?: State): void`
+
+Sends a heartbeat from the current thread with optional state information. The
+state object will be serialized and included as a JavaScript object with the
+corresponding stack trace.
+
+#### `getThreadsLastSeen(): Record<string, number>`
+
+Returns the time in milliseconds since each registered thread called
+`threadPoll()`.
