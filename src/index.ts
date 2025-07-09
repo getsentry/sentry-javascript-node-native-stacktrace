@@ -25,7 +25,7 @@ type StackFrame = {
 
 interface Native {
   registerThread(threadName: string): void;
-  threadPoll(state?: object): void;
+  threadPoll(state?: object, disableLastSeen?: boolean): void;
   captureStackTrace<S = unknown>(): Record<string, Thread<S>>;
   getThreadsLastSeen(): Record<string, number>;
 }
@@ -187,10 +187,11 @@ export function registerThread(threadName: string = String(threadId)): void {
  * Tells the native module that the thread is still running and updates the state.
  *
  * @param state Optional state to pass to the native module.
+ * @param disableLastSeen If true, disables the last seen tracking for this thread.
  */
-export function threadPoll(state?: object): void {
-  if (typeof state === 'object') {
-    native.threadPoll(state);
+export function threadPoll(state?: object, disableLastSeen?: boolean): void {
+  if (typeof state === 'object' || disableLastSeen) {
+    native.threadPoll(state, disableLastSeen);
   } else {
     native.threadPoll();
   }

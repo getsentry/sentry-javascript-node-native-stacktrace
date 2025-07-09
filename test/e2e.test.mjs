@@ -89,4 +89,13 @@ describe('e2e Tests', { timeout: 20000 }, () => {
 
     expect(stacks['2'].frames.length).toEqual(1);
   });
+
+  test('can be disabled', { timeout: 20000 }, () => {
+    const testFile = join(__dirname, 'stalled-disabled.js');
+    const result = spawnSync('node', [testFile]);
+
+    expect(result.status).toEqual(0);
+
+    expect(result.stdout.toString()).toContain('complete');
+  });
 });

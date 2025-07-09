@@ -249,7 +249,7 @@ void ThreadPoll(const FunctionCallbackInfo<Value> &args) {
   auto context = isolate->GetCurrentContext();
 
   std::string state_str;
-  if (args.Length() == 1 && args[0]->IsValue()) {
+  if (args.Length() > 0 && args[0]->IsValue()) {
     MaybeLocal<String> maybe_json = v8::JSON::Stringify(context, args[0]);
     if (!maybe_json.IsEmpty()) {
       v8::String::Utf8Value utf8_state(isolate, maybe_json.ToLocalChecked());
@@ -261,14 +261,23 @@ void ThreadPoll(const FunctionCallbackInfo<Value> &args) {
     state_str = "";
   }
 
+  bool disable_last_seen = false;
+  if (args.Length() > 1 && args[1]->IsBoolean()) {
+    disable_last_seen = args[1]->BooleanValue(isolate);
+  }
+
   {
     std::lock_guard<std::mutex> lock(threads_mutex);
     auto found = threads.find(isolate);
     if (found != threads.end()) {
       auto &thread_info = found->second;
       thread_info.state = state_str;
-      thread_info.last_seen =
-          duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+      if (disable_last_seen) {
+        thread_info.last_seen = milliseconds::zero();
+      } else {
+        thread_info.last_seen =
+            duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+      }
     }
   }
 }

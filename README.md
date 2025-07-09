@@ -9,6 +9,10 @@ a threshold, JavaScript stack traces can be captured. The heartbeats can
 optionally include state information which is included with the corresponding
 stack trace.
 
+This native module is used for Sentry's
+[Event Loop Blocked Detection](https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/event-loop-block/)
+feature.
+
 ## Basic Usage
 
 ### 1. Register threads you want to monitor
@@ -38,58 +42,62 @@ Stack traces show where each thread is currently executing:
 
 ```js
 {
-  '0': [
-    {
-      function: 'from',
-      filename: 'node:buffer',
-      lineno: 298,
-      colno: 28
-    },
-    {
-      function: 'pbkdf2Sync',
-      filename: 'node:internal/crypto/pbkdf2',
-      lineno: 78,
-      colno: 17
-    },
-    {
-      function: 'longWork',
-      filename: '/app/test.js',
-      lineno: 20,
-      colno: 29
-    },
-    {
-      function: '?',
-      filename: '/app/test.js',
-      lineno: 24,
-      colno: 1
-    }
-  ],
-  '2': [
-    {
-      function: 'from',
-      filename: 'node:buffer',
-      lineno: 298,
-      colno: 28
-    },
-    {
-      function: 'pbkdf2Sync',
-      filename: 'node:internal/crypto/pbkdf2',
-      lineno: 78,
-      colno: 17
-    },
-    {
-      function: 'longWork',
-      filename: '/app/worker.js',
-      lineno: 10,
-      colno: 29
-    },
-    {
-      function: '?',
-      filename: '/app/worker.js',
-      lineno: 14,
-      colno: 1
-    }
-  ]
+  '0': { // Main thread has ID '0'
+    frames: [
+      {
+        function: 'from',
+        filename: 'node:buffer',
+        lineno: 298,
+        colno: 28
+      },
+      {
+        function: 'pbkdf2Sync',
+        filename: 'node:internal/crypto/pbkdf2',
+        lineno: 78,
+        colno: 17
+      },
+      {
+        function: 'longWork',
+        filename: '/app/test.js',
+        lineno: 20,
+        colno: 29
+      },
+      {
+        function: '?',
+        filename: '/app/test.js',
+        lineno: 24,
+        colno: 1
+      }
+    ]
+  },
+  '2': { // Worker thread 
+    frames: [
+      {
+        function: 'from',
+        filename: 'node:buffer',
+        lineno: 298,
+        colno: 28
+      },
+      {
+        function: 'pbkdf2Sync',
+        filename: 'node:internal/crypto/pbkdf2',
+        lineno: 78,
+        colno: 17
+      },
+      {
+        function: 'longWork',
+        filename: '/app/worker.js',
+        lineno: 10,
+        colno: 29
+      },
+      {
+        function: '?',
+        filename: '/app/worker.js',
+        lineno: 14,
+        colno: 1
+      }
+    ]
+  }
 }
 ```
 
@@ -179,11 +187,16 @@ type StackFrame = {
 };
 ```
 
-#### `threadPoll<State>(state?: State): void`
+#### `threadPoll<State>(state?: State, disableLastSeen?: boolean): void`
 
 Sends a heartbeat from the current thread with optional state information. The
 state object will be serialized and included as a JavaScript object with the
 corresponding stack trace.
+
+- `state` (optional): An object containing state information to include with the
+  stack trace.
+- `disableLastSeen` (optional): If `true`, disables the tracking of the last
+  seen time for this thread.
 
 #### `getThreadsLastSeen(): Record<string, number>`
 
