@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- fix: Correct the Electron warning log message
+
 ## 0.2.0
 
 - feat: Allow disabling of watchdog tracking per thread (#11)
