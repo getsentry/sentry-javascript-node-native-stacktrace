@@ -3,6 +3,16 @@
 #include <mutex>
 #include <node.h>
 
+// Platform-specific includes for time functions
+#ifdef _WIN32
+#include <realtimeapiset.h>
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <time.h>
+#elif defined(__linux__)
+#include <time.h>
+#endif
+
 using namespace v8;
 using namespace node;
 using namespace std::chrono;
@@ -243,6 +253,31 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
   }
 }
 
+// Cross-platform monotonic time function. Provides a monotonic clock that only
+// increases and does not tick when the system is suspended.
+steady_clock::time_point GetUnbiasedMonotonicTime() {
+#ifdef _WIN32
+  // Windows: QueryUnbiasedInterruptTimePrecise returns time in 100-nanosecond
+  // units
+  ULONGLONG interrupt_time;
+  QueryUnbiasedInterruptTimePrecise(&interrupt_time);
+  // Convert from 100-nanosecond units to nanoseconds
+  uint64_t time_ns = interrupt_time * 100;
+  return steady_clock::time_point(nanoseconds(time_ns));
+#elif defined(__APPLE__)
+  uint64_t time_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  return steady_clock::time_point(nanoseconds(time_ns));
+#elif defined(__linux__)
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return steady_clock::time_point(seconds(ts.tv_sec) + nanoseconds(ts.tv_nsec));
+#else
+  // Fallback for other platforms using steady_clock. Note: this will be
+  // monotonic but is not gaurenteed to ignore time spent while suspended.
+  return steady_clock::now();
+#endif
+}
+
 // Function to track a thread and set its state
 void ThreadPoll(const FunctionCallbackInfo<Value> &args) {
   auto isolate = args.GetIsolate();
@@ -275,8 +310,8 @@ void ThreadPoll(const FunctionCallbackInfo<Value> &args) {
       if (disable_last_seen) {
         thread_info.last_seen = milliseconds::zero();
       } else {
-        thread_info.last_seen =
-            duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+        thread_info.last_seen = duration_cast<milliseconds>(
+            GetUnbiasedMonotonicTime().time_since_epoch());
       }
     }
   }
@@ -286,8 +321,8 @@ void ThreadPoll(const FunctionCallbackInfo<Value> &args) {
 void GetThreadsLastSeen(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
   Local<Object> result = Object::New(isolate);
-  milliseconds now =
-      duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+  milliseconds now = duration_cast<milliseconds>(
+      GetUnbiasedMonotonicTime().time_since_epoch());
   {
     std::lock_guard<std::mutex> lock(threads_mutex);
     for (const auto &[thread_isolate, info] : threads) {
