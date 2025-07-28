@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- fix: when tracking threads, use a monotonic clock that ignores system suspension (#14)
+- ci: Build Linux in container for wider glibc support (#15)
+
+Thanks to @matthew-nicholson-anrok for their contribution!
+
 ## 0.2.1
 
 - fix: Correct the Electron warning log message
