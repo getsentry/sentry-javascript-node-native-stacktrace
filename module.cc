@@ -5,7 +5,6 @@
 
 // Platform-specific includes for time functions
 #ifdef _WIN32
-#include <realtimeapiset.h>
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <time.h>
