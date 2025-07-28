@@ -218,7 +218,7 @@ jobs:
       - name: Setup Musl
         if: contains(matrix.container, 'alpine')
         run: |
-          curl -OL https://musl.cc.timfish.dev/aarch64-linux-musl-cross.tgz
+          curl -OL https://storage.googleapis.com/sentry-dev-infra-build-assets/aarch64-linux-musl-cross.tgz
           tar -xzvf aarch64-linux-musl-cross.tgz
           $(pwd)/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc --version
 
