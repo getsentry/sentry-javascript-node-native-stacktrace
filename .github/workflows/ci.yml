@@ -35,12 +35,15 @@ jobs:
         include:
           # x64 glibc
           - os: ubuntu-22.04
+            container: telosalliance/ubuntu-20.04:latest
             node: 18
             binary: linux-x64-glibc-108
           - os: ubuntu-22.04
+            container: telosalliance/ubuntu-20.04:latest
             node: 20
             binary: linux-x64-glibc-115
           - os: ubuntu-22.04
+            container: telosalliance/ubuntu-20.04:latest
             node: 22
             binary: linux-x64-glibc-127
           - os: ubuntu-22.04
