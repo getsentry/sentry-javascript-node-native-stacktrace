@@ -7,6 +7,10 @@ on:
       - release/**
   pull_request:
 
+permissions:
+  contents: read
+  packages: read      # Required for GHCR
+
 jobs:
   job_lint:
     name: Lint
@@ -35,18 +39,19 @@ jobs:
         include:
           # x64 glibc
           - os: ubuntu-22.04
-            container: telosalliance/ubuntu-20.04:latest
+            container: ghcr.io/getsentry/sentry-test-ubuntu-20.04-amd64:0dd255f3d41d013c1db4c4e08ffd22ee7959c3cc
             node: 18
             binary: linux-x64-glibc-108
           - os: ubuntu-22.04
-            container: telosalliance/ubuntu-20.04:latest
+            container: ghcr.io/getsentry/sentry-test-ubuntu-20.04-amd64:0dd255f3d41d013c1db4c4e08ffd22ee7959c3cc
             node: 20
             binary: linux-x64-glibc-115
           - os: ubuntu-22.04
-            container: telosalliance/ubuntu-20.04:latest
+            container: ghcr.io/getsentry/sentry-test-ubuntu-20.04-amd64:0dd255f3d41d013c1db4c4e08ffd22ee7959c3cc
             node: 22
             binary: linux-x64-glibc-127
           - os: ubuntu-22.04
+            container: ghcr.io/getsentry/sentry-test-ubuntu-20.04-amd64:0dd255f3d41d013c1db4c4e08ffd22ee7959c3cc
             node: 24
             binary: linux-x64-glibc-137
 
