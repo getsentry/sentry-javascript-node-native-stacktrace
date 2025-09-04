@@ -39,7 +39,11 @@ if (fs.existsSync(binaries.target)) {
     console.log('Precompiled binary found, skipping build from source.');
   } catch (e) {
     console.log('Precompiled binary found but failed loading');
-    console.log(e);
+    if (process.env.ALWAYS_THROW) {
+      throw e;
+    } else {
+      console.log(e);
+    }
     try {
       recompileFromSource();
     } catch (e) {

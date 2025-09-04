@@ -32,7 +32,8 @@
     "build:dev": "yarn clean && yarn build:bindings:configure && yarn build",
     "build:tarball": "npm pack",
     "clean": "node-gyp clean && rm -rf lib && rm -rf build",
-    "test": "node ./test/prepare.mjs && vitest run --silent=false --disable-console-intercept"
+    "test": "yarn test:install && node ./test/prepare.mjs && vitest run --silent=false --disable-console-intercept",
+    "test:install": "ALWAYS_THROW=true yarn install"
   },
   "engines": {
     "node": ">=18"
