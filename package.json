@@ -33,7 +33,7 @@
     "build:tarball": "npm pack",
     "clean": "node-gyp clean && rm -rf lib && rm -rf build",
     "test": "yarn test:install && node ./test/prepare.mjs && vitest run --silent=false --disable-console-intercept",
-    "test:install": "ALWAYS_THROW=true yarn install"
+    "test:install": "cross-env ALWAYS_THROW=true yarn install"
   },
   "engines": {
     "node": ">=18"
@@ -47,6 +47,7 @@
     "@types/node": "^18.19.1",
     "@types/node-abi": "^3.0.3",
     "clang-format": "^1.8.0",
+    "cross-env": "^10.0.0",
     "eslint": "^7.0.0",
     "node-gyp": "^11.2.0",
     "typescript": "^5.8.3",
