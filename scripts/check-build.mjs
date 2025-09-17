@@ -1,6 +1,9 @@
-import fs from 'fs';
-import child_process from 'child_process';
+import * as child_process from 'node:child_process';
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import * as binaries from './binaries.mjs';
+
+const require = createRequire(import.meta.url);
 
 function clean(err) {
   return err.toString().trim();
@@ -32,11 +35,15 @@ function recompileFromSource() {
 
 if (fs.existsSync(binaries.target)) {
   try {
-    await import(binaries.target);
+    require(binaries.target);
     console.log('Precompiled binary found, skipping build from source.');
   } catch (e) {
     console.log('Precompiled binary found but failed loading');
-    console.log(e);
+    if (process.env.ALWAYS_THROW) {
+      throw e;
+    } else {
+      console.log(e);
+    }
     try {
       recompileFromSource();
     } catch (e) {
