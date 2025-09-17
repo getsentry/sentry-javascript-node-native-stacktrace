@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- fix: Failing install script (#22)
+
 ## 0.2.2
 
 - fix: when tracking threads, use a monotonic clock that ignores system suspension (#14)
