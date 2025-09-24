@@ -23,16 +23,16 @@
     "fix": "yarn fix:eslint && yarn fix:clang",
     "fix:eslint": "eslint . --format stylish --fix",
     "fix:clang": "node scripts/clang-format.mjs --fix",
-    "build": "yarn build:lib && yarn build:bindings:configure && yarn build:bindings",
+    "build": "yarn clean && yarn build:lib && yarn build:bindings:configure && yarn build:bindings",
     "build:lib": "tsc",
     "build:bindings:configure": "node-gyp configure",
     "build:bindings:configure:arm64": "node-gyp configure --arch=arm64 --target_arch=arm64",
     "build:bindings": "node-gyp build && node scripts/copy-target.mjs",
     "build:bindings:arm64": "node-gyp build --arch=arm64 && node scripts/copy-target.mjs",
-    "build:dev": "yarn clean && yarn build:bindings:configure && yarn build",
     "build:tarball": "npm pack",
-    "clean": "node-gyp clean && rm -rf lib && rm -rf build",
-    "test": "yarn test:install && node ./test/prepare.mjs && vitest run --silent=false --disable-console-intercept",
+    "clean": "node-gyp clean && rm -rf lib && rm -rf build && rm -f *.tgz",
+    "test": "yarn test:install && yarn test:prepare && vitest run --poolOptions.forks.singleFork --silent=false --disable-console-intercept",
+    "test:prepare": "node ./test/prepare.mjs",
     "test:install": "cross-env ALWAYS_THROW=true yarn install"
   },
   "engines": {
@@ -66,6 +66,6 @@
     "access": "public"
   },
   "volta": {
-    "node": "24.1.0"
+    "node": "24.9.0"
   }
 }

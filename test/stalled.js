@@ -5,7 +5,7 @@ const { registerThread, threadPoll } = require('@sentry-internal/node-native-sta
 registerThread();
 
 setInterval(() => {
-  threadPoll({ some_property: 'some_value' });
+  threadPoll(true, { some_property: 'some_value' });
 }, 200).unref();
 
 const watchdog = new Worker('./test/stalled-watchdog.js');

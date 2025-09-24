@@ -1,5 +1,5 @@
 {
-  "name": "node-cpu-profiler-test",
+  "name": "node-native-stacktrace-test",
   "license": "MIT",
   "dependencies": {
     "@sentry-internal/node-native-stacktrace": "{{path}}"
