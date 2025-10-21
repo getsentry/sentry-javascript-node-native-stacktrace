@@ -4,14 +4,16 @@ import { registerThread } from '@sentry-internal/node-native-stacktrace';
 import { longWork } from './long-work.js';
 
 const asyncLocalStorage = new AsyncLocalStorage();
-const storageKey = Symbol.for('sentry_scopes');
+const SOME_UNIQUE_SYMBOL = Symbol.for('sentry_scopes');
 
-registerThread({ asyncLocalStorage, storageKey });
+registerThread({ asyncLocalStorage, stateLookup: ['_currentContext', SOME_UNIQUE_SYMBOL] });
 
 function withTraceId(traceId, fn) {
-  return asyncLocalStorage.run({
-    [storageKey]: { traceId },
-  }, fn);
+  // This is a decent approximation of how Otel stores context in the ALS store
+  const store = {
+    _currentContext: new Map([ [SOME_UNIQUE_SYMBOL, { traceId }] ])
+  };
+  return asyncLocalStorage.run(store, fn);
 }
 
 const watchdog = new Worker('./test/watchdog.js');

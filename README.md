@@ -174,22 +174,33 @@ thread you want to capture stack traces from.
 
 - `threadName` (optional): Name for the thread. Defaults to the current thread
   ID.
-- `asyncStorage`: `AsyncStorageArgs` to fetch state from `AsyncLocalStorage` on
-  stack trace capture.
+- `asyncStorage` (optional): `AsyncStorageArgs` to fetch state from
+  `AsyncLocalStorage` on stack trace capture.
 
 ```ts
 type AsyncStorageArgs = {
-  // AsyncLocalStorage instance to fetch state from
+  /** AsyncLocalStorage instance to fetch state from */
   asyncLocalStorage: AsyncLocalStorage<unknown>;
-  // Optional key to fetch specific property from the store object
-  storageKey?: string | symbol;
+  /**
+   * Optional array of keys to pick a specific property from the store.
+   * Key will be traversed in order through Objects/Maps to reach the desired property.
+   *
+   * This is useful if you want to capture Open Telemetry context values as state.
+   *
+   * To get this value:
+   * context.getValue(MY_UNIQUE_SYMBOL_REF)
+   *
+   * You would set:
+   * stateLookup: ['_currentContext', MY_UNIQUE_SYMBOL_REF]
+   */
+  stateLookup?: Array<string | symbol>;
 };
 ```
 
 #### `captureStackTrace<State>(): Record<string, Thread<A, P>>`
 
 Captures stack traces from all registered threads. Can be called from any thread
-but will not capture the stack trace of the calling thread itself.
+but will not capture a stack trace for the calling thread itself.
 
 ```ts
 type Thread<A = unknown, P = unknown> = {

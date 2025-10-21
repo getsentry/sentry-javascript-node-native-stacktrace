@@ -4,6 +4,7 @@
 #include <node.h>
 #include <node_version.h>
 #include <optional>
+#include <vector>
 
 // Platform-specific includes for time functions
 #ifdef _WIN32
@@ -30,8 +31,9 @@ static const int kMaxStackFrames = 50;
 struct AsyncLocalStorageLookup {
   // Async local storage instance associated with this thread
   v8::Global<v8::Value> async_local_storage;
-  // Optional key used to look up specific data in an async local storage object
-  std::optional<v8::Global<v8::Value>> storage_key;
+  // Optional ordered array of keys (string | symbol) to traverse nested
+  // Map/Object structures to fetch the final state object
+  std::optional<std::vector<v8::Global<v8::Value>>> storage_keys;
 };
 
 // Structure to hold information for each thread/isolate
@@ -75,11 +77,126 @@ struct ThreadResult {
   std::string poll_state;
 };
 
-std::string JSONStringify(Isolate *isolate, Local<Value> value) {
-  HandleScope handle_scope(isolate);
+// Recursively sanitize a value to be safely JSON-stringifiable by:
+// - Removing properties whose values are BigInt, Function, or Symbol
+//   (dropped for objects, omitted from arrays)
+// - Breaking cycles by omitting repeated objects (undefined -> dropped/omitted)
+// - Preserving primitives and traversing arrays/objects
+static v8::Local<v8::Value>
+SanitizeForJSON(v8::Isolate *isolate, v8::Local<v8::Context> context,
+                v8::Local<v8::Value> value,
+                std::vector<v8::Local<v8::Object>> &ancestors) {
+  // Fast-path for primitives that are always JSON-compatible
+  if (value->IsNull() || value->IsBoolean() || value->IsNumber() ||
+      value->IsString()) {
+    return value;
+  }
 
+  // Values that JSON.stringify cannot handle directly
+  if (value->IsBigInt() || value->IsSymbol() || value->IsFunction() ||
+      value->IsUndefined()) {
+    // Returning undefined here lets callers decide to drop (object) or null
+    // (array)
+    return v8::Undefined(isolate);
+  }
+
+  // Arrays
+  if (value->IsArray()) {
+    auto arr = value.As<v8::Array>();
+    // Cycle detection
+    auto arr_obj = value.As<v8::Object>();
+    for (auto &a : ancestors) {
+      if (a->StrictEquals(arr_obj)) {
+        return v8::Undefined(isolate);
+      }
+    }
+
+    auto length = arr->Length();
+    auto out = v8::Array::New(isolate, 0);
+    ancestors.push_back(arr_obj);
+
+    uint32_t out_index = 0;
+    for (uint32_t i = 0; i < length; ++i) {
+      auto maybeEl = arr->Get(context, i);
+      v8::Local<v8::Value> el =
+          maybeEl.IsEmpty() ? v8::Undefined(isolate) : maybeEl.ToLocalChecked();
+
+      auto sanitized = SanitizeForJSON(isolate, context, el, ancestors);
+      if (!sanitized->IsUndefined()) {
+        out->Set(context, out_index++, sanitized)
+            .Check(); // omit undefined entries entirely
+      }
+    }
+    ancestors.pop_back();
+    return out;
+  }
+
+  // Objects (including Dates, RegExps, Maps as objects; we only traverse
+  // enumerable own props)
+  if (value->IsObject()) {
+    auto obj = value.As<v8::Object>();
+    // Cycle detection
+    for (auto &a : ancestors) {
+      if (a->StrictEquals(obj)) {
+        return v8::Undefined(isolate);
+      }
+    }
+
+    ancestors.push_back(obj);
+
+    // Collect own enumerable property names (string-keyed)
+    auto maybe_props = obj->GetPropertyNames(context);
+    if (maybe_props.IsEmpty()) {
+      ancestors.pop_back();
+      return obj; // Nothing enumerable to sanitize
+    }
+
+    auto props = maybe_props.ToLocalChecked();
+    auto out = v8::Object::New(isolate);
+    auto len = props->Length();
+    for (uint32_t i = 0; i < len; ++i) {
+      auto maybeKey = props->Get(context, i);
+      if (maybeKey.IsEmpty())
+        continue;
+
+      auto key = maybeKey.ToLocalChecked();
+      if (!key->IsString()) {
+        // Skip symbol and non-string keys to match JSON behavior
+        continue;
+      }
+
+      auto maybeVal = obj->Get(context, key);
+      if (maybeVal.IsEmpty())
+        continue;
+
+      auto val = maybeVal.ToLocalChecked();
+      auto sanitized = SanitizeForJSON(isolate, context, val, ancestors);
+      if (!sanitized->IsUndefined()) {
+        out->Set(context, key, sanitized).Check();
+      }
+      // else: undefined -> drop property
+    }
+
+    ancestors.pop_back();
+    return out;
+  }
+
+  // Fallback: return as-is (shouldn't hit here for other exotic types)
+  return value;
+}
+
+std::string JSONStringify(Isolate *isolate, Local<Value> value) {
   auto context = isolate->GetCurrentContext();
-  auto maybe_json = v8::JSON::Stringify(context, value);
+
+  // Sanitize the value first to avoid JSON failures (e.g., BigInt, cycles)
+  std::vector<v8::Local<v8::Object>> ancestors;
+  auto sanitized = SanitizeForJSON(isolate, context, value, ancestors);
+  if (sanitized->IsUndefined()) {
+    // Nothing serializable
+    return "";
+  }
+
+  auto maybe_json = v8::JSON::Stringify(context, sanitized);
   if (maybe_json.IsEmpty()) {
     return "";
   }
@@ -89,8 +206,6 @@ std::string JSONStringify(Isolate *isolate, Local<Value> value) {
 
 // Function to get stack frames from a V8 stack trace
 JsStackFrames GetStackFrames(Isolate *isolate) {
-  HandleScope handle_scope(isolate);
-
   auto stack = StackTrace::CurrentStackTrace(isolate, kMaxStackFrames,
                                              StackTrace::kDetailed);
 
@@ -135,12 +250,11 @@ JsStackFrames GetStackFrames(Isolate *isolate) {
 // Function to fetch the thread state from the async context store
 std::string GetThreadState(Isolate *isolate,
                            const AsyncLocalStorageLookup &store) {
-  HandleScope handle_scope(isolate);
 
-  // Node.js stores the async local storage in the isolate's
-  // "ContinuationPreservedEmbedderData" map, keyed by the
-  // AsyncLocalStorage instance.
-  // https://github.com/nodejs/node/blob/c6316f9db9869864cea84e5f07585fa08e3e06d2/src/async_context_frame.cc#L37
+// Node.js stores the async local storage in the isolate's
+// "ContinuationPreservedEmbedderData" map, keyed by the
+// AsyncLocalStorage instance.
+// https://github.com/nodejs/node/blob/c6316f9db9869864cea84e5f07585fa08e3e06d2/src/async_context_frame.cc#L37
 #if GET_CONTINUATION_PRESERVED_EMBEDDER_DATA_V2
   auto data = isolate->GetContinuationPreservedEmbedderDataV2().As<Value>();
 #else
@@ -162,18 +276,36 @@ std::string GetThreadState(Isolate *isolate,
 
   auto root_store = maybe_root_store.ToLocalChecked();
 
-  if (store.storage_key.has_value() && root_store->IsObject()) {
-    auto local_key = store.storage_key->Get(isolate);
+  if (store.storage_keys.has_value()) {
+    // Walk the keys to get the desired nested value
+    const auto &keys = store.storage_keys.value();
+    auto current = root_store;
 
-    if (local_key->IsString() || local_key->IsSymbol()) {
-      auto root_obj = root_store.As<v8::Object>();
-      auto maybeValue = root_obj->Get(context, local_key);
+    for (auto &gkey : keys) {
+      auto local_key = gkey.Get(isolate);
+      if (!(local_key->IsString() || local_key->IsSymbol())) {
+        continue;
+      }
+
+      v8::MaybeLocal<v8::Value> maybeValue;
+      if (current->IsMap()) {
+        auto map_val = current.As<v8::Map>();
+        maybeValue = map_val->Get(context, local_key);
+      } else if (current->IsObject()) {
+        auto obj_val = current.As<v8::Object>();
+        maybeValue = obj_val->Get(context, local_key);
+      } else {
+        return "";
+      }
+
       if (maybeValue.IsEmpty()) {
         return "";
       }
 
-      root_store = maybeValue.ToLocalChecked();
+      current = maybeValue.ToLocalChecked();
     }
+
+    root_store = current;
   }
 
   return JSONStringify(isolate, root_store);
@@ -232,7 +364,6 @@ CaptureStackTrace(Isolate *isolate,
 // Function to capture stack traces from all registered threads
 void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
   auto capture_from_isolate = args.GetIsolate();
-  HandleScope handle_scope(capture_from_isolate);
 
   std::vector<ThreadResult> results;
 
@@ -401,7 +532,6 @@ void RegisterThreadInternal(
 // Function to register a thread and update its last seen time
 void RegisterThread(const FunctionCallbackInfo<Value> &args) {
   auto isolate = args.GetIsolate();
-  HandleScope handle_scope(isolate);
 
   if (args.Length() == 1 && args[0]->IsString()) {
     v8::String::Utf8Value utf8(isolate, args[0]);
@@ -430,24 +560,45 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
       return;
     }
 
-    std::optional<v8::Global<v8::Value>> storage_key = std::nullopt;
+    std::optional<std::vector<v8::Global<v8::Value>>> storage_keys =
+        std::nullopt;
 
-    auto storage_key_val = obj->Get(
-        isolate->GetCurrentContext(),
-        String::NewFromUtf8(isolate, "storageKey", NewStringType::kInternalized)
-            .ToLocalChecked());
+    auto storage_key_val =
+        obj->Get(isolate->GetCurrentContext(),
+                 String::NewFromUtf8(isolate, "stateLookup",
+                                     NewStringType::kInternalized)
+                     .ToLocalChecked());
 
     if (!storage_key_val.IsEmpty()) {
+
       auto local_val = storage_key_val.ToLocalChecked();
       if (!local_val->IsUndefined() && !local_val->IsNull()) {
-        storage_key = v8::Global<v8::Value>(isolate, local_val);
+        if (local_val->IsArray()) {
+
+          auto arr = local_val.As<v8::Array>();
+          std::vector<v8::Global<v8::Value>> keys_vec;
+          uint32_t length = arr->Length();
+          for (uint32_t i = 0; i < length; ++i) {
+            auto maybeEl = arr->Get(isolate->GetCurrentContext(), i);
+            if (maybeEl.IsEmpty())
+              continue;
+            auto el = maybeEl.ToLocalChecked();
+            if (el->IsString() || el->IsSymbol()) {
+
+              keys_vec.emplace_back(isolate, el);
+            }
+          }
+          if (!keys_vec.empty()) {
+            storage_keys = std::move(keys_vec);
+          }
+        }
       }
     }
 
     auto store = AsyncLocalStorageLookup{
         v8::Global<v8::Value>(isolate,
                               async_local_storage_val.ToLocalChecked()),
-        std::move(storage_key)};
+        std::move(storage_keys)};
 
     RegisterThreadInternal(isolate, thread_name, std::move(store));
   } else {
@@ -457,7 +608,8 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
             "Incorrect arguments. Expected: \n"
             "- registerThread(threadName: string) or \n"
             "- registerThread(storage: {asyncLocalStorage: AsyncLocalStorage; "
-            "storageKey?: string | symbol}, threadName: string)",
+            "stateLookup?: Array<string | symbol>}, "
+            "threadName: string)",
             NewStringType::kInternalized)
             .ToLocalChecked()));
   }
@@ -491,7 +643,6 @@ steady_clock::time_point GetUnbiasedMonotonicTime() {
 // Function to track a thread and set its state
 void ThreadPoll(const FunctionCallbackInfo<Value> &args) {
   auto isolate = args.GetIsolate();
-  HandleScope handle_scope(isolate);
 
   bool enable_last_seen = true;
   if (args.Length() > 0 && args[0]->IsBoolean()) {
@@ -524,7 +675,6 @@ void ThreadPoll(const FunctionCallbackInfo<Value> &args) {
 // Function to get the last seen time of all registered threads
 void GetThreadsLastSeen(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
-  HandleScope handle_scope(isolate);
 
   Local<Object> result = Object::New(isolate);
   milliseconds now = duration_cast<milliseconds>(

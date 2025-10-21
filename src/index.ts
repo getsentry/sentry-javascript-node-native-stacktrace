@@ -16,12 +16,18 @@ type AsyncStorageArgs = {
   /** The AsyncLocalStorage instance used to fetch the store */
   asyncLocalStorage: AsyncLocalStorage<unknown>;
   /**
-   * Optional key in the store to fetch the state from. If not provided, the entire store will be returned.
+   * Optional array of keys to fetch a specific property from the store
+   * Key will be traversed in order through Objects/Maps to reach the desired property.
    *
-   * This can be useful to fetch only a specific part of the state or in the
-   * case of Open Telemetry, where it stores context under a symbol key.
+   * This is useful if you want to capture Open Telemetry context values as state.
+   *
+   * To get this value:
+   * context.getValue(my_unique_symbol_ref)
+   *
+   * You would set:
+   * stateLookup: ['_currentContext', my_unique_symbol_ref]
    */
-  storageKey?: string | symbol;
+  stateLookup?: Array<string | symbol>;
 }
 
 type Thread<A = unknown, P = unknown> = {
