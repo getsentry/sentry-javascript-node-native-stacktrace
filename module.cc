@@ -118,8 +118,10 @@ SanitizeForJSON(v8::Isolate *isolate, v8::Local<v8::Context> context,
     uint32_t out_index = 0;
     for (uint32_t i = 0; i < length; ++i) {
       auto maybeEl = arr->Get(context, i);
-      v8::Local<v8::Value> el =
-          maybeEl.IsEmpty() ? v8::Undefined(isolate) : maybeEl.ToLocalChecked();
+      v8::Local<v8::Value> el;
+      if (!maybeEl.ToLocal(&el)) {
+        el = v8::Undefined(isolate);
+      }
 
       auto sanitized = SanitizeForJSON(isolate, context, el, ancestors);
       if (!sanitized->IsUndefined()) {
