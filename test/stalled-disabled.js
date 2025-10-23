@@ -1,11 +1,15 @@
 const { Worker } = require('node:worker_threads');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { longWork } = require('./long-work.js');
 const { registerThread, threadPoll } = require('@sentry-internal/node-native-stacktrace');
 
-registerThread();
+const asyncLocalStorage = new AsyncLocalStorage();
+asyncLocalStorage.enterWith({ some_property: 'some_value' });
+
+registerThread({ asyncLocalStorage });
 
 setInterval(() => {
-  threadPoll({ some_property: 'some_value' }, true);
+  threadPoll(false);
 }, 200).unref();
 
 const watchdog = new Worker('./test/stalled-watchdog.js');

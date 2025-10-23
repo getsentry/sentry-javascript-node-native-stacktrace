@@ -1,6 +1,5 @@
-
 import { execSync, spawnSync } from 'node:child_process';
-import {existsSync,readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,9 +15,8 @@ function installTarballAsDependency(root) {
   const tarball = join(__dirname, '..', `${normalizedName}-${pkgJson.version}.tgz`);
 
   if (!existsSync(tarball)) {
-    console.error(`Tarball not found: '${tarball}'`);
-    console.error('Run \'yarn build && yarn build:tarball\' first');
-    process.exit(1);
+    console.log('Creating tarball...');
+    execSync('yarn build:tarball', { shell: true, stdio: 'inherit' });
   }
 
   const tarballRelative = relative(root, tarball);

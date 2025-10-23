@@ -5,9 +5,11 @@ main or worker threads from any other thread, even if event loops are blocked.
 
 The module also provides a means to create a watchdog system to track event loop
 blocking via periodic heartbeats. When the time from the last heartbeat crosses
-a threshold, JavaScript stack traces can be captured. The heartbeats can
-optionally include state information which is included with the corresponding
-stack trace.
+a threshold, JavaScript stack traces can be captured.
+
+For Node.js >= v24, this module can also capture state from `AsyncLocalStorage`
+at the time of stack trace capture, which can help provide context on what the
+thread was working on when it became blocked.
 
 This native module is used for Sentry's
 [Event Loop Blocked Detection](https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/event-loop-block/)
@@ -70,7 +72,7 @@ Stack traces show where each thread is currently executing:
       }
     ]
   },
-  '2': { // Worker thread 
+  '2': { // Worker thread
     frames: [
       {
         function: 'from',
@@ -105,25 +107,28 @@ Stack traces show where each thread is currently executing:
 
 Set up automatic detection of blocked event loops:
 
-### 1. Set up thread heartbeats
+### 1. Register threads with `AsyncLocalStorage` state tracking and heartbeats
 
-Send regular heartbeats with optional state information:
+Send regular heartbeats:
 
 ```ts
 import {
   registerThread,
   threadPoll,
 } from "@sentry-internal/node-native-stacktrace";
+import { AsyncLocalStorage } from "node:async_hooks";
 
-// Register this thread
-registerThread();
+// Create async local storage for state tracking
+const asyncLocalStorage = new AsyncLocalStorage();
+// Set some state in the async local storage
+asyncLocalStorage.enterWith({ someState: "value" });
 
-// Send heartbeats every 200ms with optional state
+// Register this thread with async local storage
+registerThread({ asyncLocalStorage });
+
+// Send heartbeats every 200ms
 setInterval(() => {
-  threadPoll({
-    endpoint: "/api/current-request",
-    userId: getCurrentUserId(),
-  });
+  threadPoll();
 }, 200);
 ```
 
@@ -150,7 +155,7 @@ setInterval(() => {
 
       console.error(`🚨 Thread ${threadId} blocked for ${timeSinceLastSeen}ms`);
       console.error("Stack trace:", blockedThread.frames);
-      console.error("Last known state:", blockedThread.state);
+      console.error("Async state:", blockedThread.asyncState);
     }
   }
 }, 500); // Check every 500ms
@@ -162,21 +167,48 @@ setInterval(() => {
 
 #### `registerThread(threadName?: string): void`
 
-Registers the current thread for monitoring. Must be called from each thread you
-want to capture stack traces from.
+#### `registerThread(asyncStorage: AsyncStorageArgs, threadName?: string): void`
+
+Registers the current thread for stack trace capture. Must be called from each
+thread you want to capture stack traces from.
 
 - `threadName` (optional): Name for the thread. Defaults to the current thread
   ID.
-
-#### `captureStackTrace<State>(): Record<string, Thread<State>>`
-
-Captures stack traces from all registered threads. Can be called from any thread
-but will not capture the stack trace of the calling thread itself.
+- `asyncStorage` (optional): `AsyncStorageArgs` to fetch state from
+  `AsyncLocalStorage` on stack trace capture.
 
 ```ts
-type Thread<S> = {
+type AsyncStorageArgs = {
+  /** AsyncLocalStorage instance to fetch state from */
+  asyncLocalStorage: AsyncLocalStorage<unknown>;
+  /**
+   * Optional array of keys to pick a specific property from the store.
+   * Key will be traversed in order through Objects/Maps to reach the desired property.
+   *
+   * This is useful if you want to capture Open Telemetry context values as state.
+   *
+   * To get this value:
+   * context.getValue(MY_UNIQUE_SYMBOL_REF)
+   *
+   * You would set:
+   * stateLookup: ['_currentContext', MY_UNIQUE_SYMBOL_REF]
+   */
+  stateLookup?: Array<string | symbol>;
+};
+```
+
+#### `captureStackTrace<State>(): Record<string, Thread<A, P>>`
+
+Captures stack traces from all registered threads. Can be called from any thread
+but will not capture a stack trace for the calling thread itself.
+
+```ts
+type Thread<A = unknown, P = unknown> = {
   frames: StackFrame[];
-  state?: S;
+  /** State captured from the AsyncLocalStorage */
+  asyncState?: A;
+  /** Optional state provided when calling threadPoll */
+  pollState?: P;
 };
 
 type StackFrame = {
@@ -187,16 +219,15 @@ type StackFrame = {
 };
 ```
 
-#### `threadPoll<State>(state?: State, disableLastSeen?: boolean): void`
+#### `threadPoll<State>(disableLastSeen?: boolean, pollState?: object): void`
 
-Sends a heartbeat from the current thread with optional state information. The
-state object will be serialized and included as a JavaScript object with the
-corresponding stack trace.
+Sends a heartbeat from the current thread.
 
-- `state` (optional): An object containing state information to include with the
-  stack trace.
 - `disableLastSeen` (optional): If `true`, disables the tracking of the last
   seen time for this thread.
+- `pollState` (optional): An object containing state to include with the next
+  stack trace capture. This can be used instead of or in addition to
+  `AsyncLocalStorage` based state tracking.
 
 #### `getThreadsLastSeen(): Record<string, number>`
 

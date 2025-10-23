@@ -2,7 +2,7 @@ module.exports = {
   extends: ['@sentry-internal/sdk'],
   env: {
     node: true,
-    es6: true,
+    es2020: true
   },
   parserOptions: {
     sourceType: 'module',
