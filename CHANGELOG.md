@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- feat: Capture thread state from `AsyncLocalStorage` store (#24)
+
 ## 0.2.3
 
 - fix: Failing install script (#22)
