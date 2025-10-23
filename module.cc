@@ -65,7 +65,7 @@ using JsStackFrames = std::vector<JsStackFrame>;
 
 struct JsStackTrace {
   // The frames in the stack trace
-  std::vector<JsStackFrame> frames;
+  JsStackFrames frames;
   // JSON serialized string of the async state
   std::string async_state;
 };
@@ -534,6 +534,7 @@ void RegisterThreadInternal(
 // Function to register a thread and update its last seen time
 void RegisterThread(const FunctionCallbackInfo<Value> &args) {
   auto isolate = args.GetIsolate();
+  auto context = isolate->GetCurrentContext();
 
   if (args.Length() == 1 && args[0]->IsString()) {
     v8::String::Utf8Value utf8(isolate, args[0]);
@@ -546,10 +547,9 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
 
     auto obj = args[0].As<Object>();
     auto async_local_storage_val =
-        obj->Get(isolate->GetCurrentContext(),
-                 String::NewFromUtf8(isolate, "asyncLocalStorage",
-                                     NewStringType::kInternalized)
-                     .ToLocalChecked());
+        obj->Get(context, String::NewFromUtf8(isolate, "asyncLocalStorage",
+                                              NewStringType::kInternalized)
+                              .ToLocalChecked());
 
     if (async_local_storage_val.IsEmpty() ||
         !async_local_storage_val.ToLocalChecked()->IsObject()) {
@@ -566,10 +566,9 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
         std::nullopt;
 
     auto storage_key_val =
-        obj->Get(isolate->GetCurrentContext(),
-                 String::NewFromUtf8(isolate, "stateLookup",
-                                     NewStringType::kInternalized)
-                     .ToLocalChecked());
+        obj->Get(context, String::NewFromUtf8(isolate, "stateLookup",
+                                              NewStringType::kInternalized)
+                              .ToLocalChecked());
 
     if (!storage_key_val.IsEmpty()) {
 
@@ -581,7 +580,7 @@ void RegisterThread(const FunctionCallbackInfo<Value> &args) {
           std::vector<v8::Global<v8::Value>> keys_vec;
           uint32_t length = arr->Length();
           for (uint32_t i = 0; i < length; ++i) {
-            auto maybeEl = arr->Get(isolate->GetCurrentContext(), i);
+            auto maybeEl = arr->Get(context, i);
             if (maybeEl.IsEmpty())
               continue;
             auto el = maybeEl.ToLocalChecked();
