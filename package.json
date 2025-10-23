@@ -1,6 +1,6 @@
 {
   "name": "@sentry-internal/node-native-stacktrace",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "repository": "git://github.com/getsentry/sentry-javascript-node-native-stacktrace.git",
