@@ -151,6 +151,42 @@ describe('e2e Tests', { timeout }, () => {
     }));
   });
 
+  test('detect completely blocked thread', async () => {
+    const result = await runTest(__dirname, 'stalled-forever.js');
+
+    expect(result.status).toEqual(0);
+
+    expect(result.trace).toEqual(expect.objectContaining({
+      '0': {
+        frames: expect.any(Array),
+        pollState: { some_property: 'main_thread' }
+      },
+      '2': {
+        frames: expect.arrayContaining([
+          {
+            function: 'pbkdf2Sync',
+            filename: expect.any(String),
+            lineno: expect.any(Number),
+            colno: expect.any(Number),
+          },
+          {
+            function: 'longWork',
+            filename: expect.stringMatching(/long-work.js$/),
+            lineno: expect.any(Number),
+            colno: expect.any(Number),
+          },
+          {
+            function: '?',
+            filename: expect.stringMatching(/worker-forever.js$/),
+            lineno: expect.any(Number),
+            colno: expect.any(Number),
+          },
+        ]),
+        pollState: { some_property: 'worker_thread' },
+      },
+    }));
+  });
+
   test('async storage state', async (ctx) => {
     if (NODE_MAJOR_VERSION < 22) {
       ctx.skip();

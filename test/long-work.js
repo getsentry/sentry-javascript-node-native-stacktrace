@@ -8,4 +8,11 @@ function longWork() {
   }
 }
 
-module.exports = { longWork };
+function foreverWork() {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    longWork();
+  }
+}
+
+module.exports = { longWork, foreverWork };
