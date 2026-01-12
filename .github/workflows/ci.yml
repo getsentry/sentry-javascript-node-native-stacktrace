@@ -114,19 +114,19 @@ jobs:
             binary: linux-arm64-musl-137
 
             # macos x64
-          - os: macos-15
+          - os: macos-15-intel
             node: 18
             arch: x64
             binary: darwin-x64-108
-          - os: macos-15
+          - os: macos-15-intel
             node: 20
             arch: x64
             binary: darwin-x64-115
-          - os: macos-15
+          - os: macos-15-intel
             node: 22
             arch: x64
             binary: darwin-x64-127
-          - os: macos-15
+          - os: macos-15-intel
             node: 24
             arch: x64
             binary: darwin-x64-137
