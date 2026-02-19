@@ -1,10 +1,9 @@
 import child_process from 'child_process';
 
 const args = ['--Werror', '-i', '--style=file', 'module.cc'];
-const cmd = `./node_modules/.bin/clang-format ${args.join(' ')}`;
 
 try {
-  child_process.execSync(cmd, {stdio: 'inherit'});
+  child_process.execFileSync('./node_modules/.bin/clang-format', args, {stdio: 'inherit'});
 } catch (e) {
   // This fails on linux_arm64
   // eslint-disable-next-line no-console
