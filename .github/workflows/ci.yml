@@ -203,7 +203,7 @@ jobs:
           git config --global --add safe.directory "*"
 
       - name: Setup python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         if: ${{ !contains(matrix.container, 'alpine') }}
         id: python-setup
         with:
@@ -268,7 +268,7 @@ jobs:
         run: yarn build:lib
 
       - name: Archive Binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: stack-trace-${{ matrix.binary }}
           path: ${{ github.workspace }}/lib/stack-trace-${{matrix.binary}}.node
@@ -293,7 +293,7 @@ jobs:
         run: yarn build:lib
 
       - name: Extract Prebuilt Binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: stack-trace-*
           path: ${{ github.workspace }}/lib/
@@ -303,7 +303,7 @@ jobs:
         run: yarn build:tarball
 
       - name: Archive artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ github.sha }}
           retention-days: 90
@@ -335,7 +335,7 @@ jobs:
       - name: Install dependencies
         run: yarn install --ignore-engines --ignore-scripts --frozen-lockfile
       - name: Download Tarball
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ github.sha }}
       - name: Run tests
