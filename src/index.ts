@@ -49,7 +49,7 @@ interface Native {
   registerThread(threadName: string): void;
   registerThread(storage: AsyncStorageArgs, threadName: string): void;
   threadPoll(enableLastSeen?: boolean, pollState?: object): void;
-  captureStackTrace<A = unknown, P = unknown>(): Record<string, Thread<A, P>>;
+  captureStackTrace(): Record<string, Thread<string, string>>;
   getThreadsLastSeen(): Record<string, number>;
 }
 
@@ -230,7 +230,20 @@ export function threadPoll(enableLastSeen: boolean = true, pollState?: object): 
  * Captures stack traces for all registered threads.
  */
 export function captureStackTrace<A = unknown, P = unknown>(): Record<string, Thread<A, P>> {
-  return native.captureStackTrace<A, P>();
+  const result = native.captureStackTrace();
+
+  // Parse the asyncState and pollState from JSON strings back into objects
+  const transformedResult: Record<string, Thread<A, P>> = {};
+  for (const [key, value] of Object.entries(result)) {
+    const thread: Thread<A, P> = {
+      frames: value.frames,
+      ...(value.asyncState && { asyncState: JSON.parse(value.asyncState) }),
+      ...(value.pollState && { pollState: JSON.parse(value.pollState) }),
+    };
+    transformedResult[key] = thread;
+  }
+
+  return transformedResult;
 }
 
 /**
