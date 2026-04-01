@@ -324,7 +324,7 @@ jobs:
             macos-15-intel, # macOS x64
             windows-latest,
           ]
-        node: [18, 20, 22, 24]
+        node: [18, 20, 22, 24, 25]
     steps:
       - name: Check out current commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
