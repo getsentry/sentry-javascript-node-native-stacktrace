@@ -46,12 +46,8 @@ if (fs.existsSync(binaries.target)) {
     } else {
       console.log(e);
     }
-    try {
-      await recompileFromSource();
-    } catch (e) {
-      console.log('Failed to compile from source');
-      throw e;
-    }
+
+    await recompileFromSource();
   }
 } else {
   console.log('No precompiled binary found');
