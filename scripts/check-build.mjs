@@ -9,7 +9,7 @@ function clean(err) {
   return err.toString().trim();
 }
 
-function recompileFromSource() {
+async function recompileFromSource() {
   console.log('Compiling from source...');
   let spawn = child_process.spawnSync('node-gyp', ['configure'], {
     stdio: ['inherit', 'inherit', 'pipe'],
@@ -32,7 +32,7 @@ function recompileFromSource() {
     return;
   }
 
-  require('./copy-target.mjs');
+  await import('./copy-target.mjs');
 }
 
 if (fs.existsSync(binaries.target)) {
@@ -47,7 +47,7 @@ if (fs.existsSync(binaries.target)) {
       console.log(e);
     }
     try {
-      recompileFromSource();
+      await recompileFromSource();
     } catch (e) {
       console.log('Failed to compile from source');
       throw e;
@@ -55,5 +55,5 @@ if (fs.existsSync(binaries.target)) {
   }
 } else {
   console.log('No precompiled binary found');
-  recompileFromSource();
+  await recompileFromSource();
 }
