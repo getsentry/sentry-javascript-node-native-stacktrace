@@ -31,6 +31,8 @@ function recompileFromSource() {
     console.log(clean(spawn.stderr));
     return;
   }
+
+  require('./copy-target.mjs');
 }
 
 if (fs.existsSync(binaries.target)) {
