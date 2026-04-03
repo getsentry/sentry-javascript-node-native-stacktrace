@@ -467,18 +467,13 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
           capture_from_isolate, result.poll_state.c_str(),
           NewStringType::kNormal);
       if (!stateStr.IsEmpty()) {
-        v8::MaybeLocal<v8::Value> maybeStateVal =
-            v8::JSON::Parse(current_context, stateStr.ToLocalChecked());
-        v8::Local<v8::Value> stateVal;
-        if (maybeStateVal.ToLocal(&stateVal)) {
-          threadObj
-              ->Set(current_context,
-                    String::NewFromUtf8(capture_from_isolate, "pollState",
-                                        NewStringType::kInternalized)
-                        .ToLocalChecked(),
-                    stateVal)
-              .Check();
-        }
+        threadObj
+            ->Set(current_context,
+                  String::NewFromUtf8(capture_from_isolate, "pollState",
+                                      NewStringType::kInternalized)
+                      .ToLocalChecked(),
+                  stateStr.ToLocalChecked())
+            .Check();
       }
     }
 
@@ -487,18 +482,13 @@ void CaptureStackTraces(const FunctionCallbackInfo<Value> &args) {
           capture_from_isolate, result.stack_trace.async_state.c_str(),
           NewStringType::kNormal);
       if (!stateStr.IsEmpty()) {
-        v8::MaybeLocal<v8::Value> maybeStateVal =
-            v8::JSON::Parse(current_context, stateStr.ToLocalChecked());
-        v8::Local<v8::Value> stateVal;
-        if (maybeStateVal.ToLocal(&stateVal)) {
-          threadObj
-              ->Set(current_context,
-                    String::NewFromUtf8(capture_from_isolate, "asyncState",
-                                        NewStringType::kInternalized)
-                        .ToLocalChecked(),
-                    stateVal)
-              .Check();
-        }
+        threadObj
+            ->Set(current_context,
+                  String::NewFromUtf8(capture_from_isolate, "asyncState",
+                                      NewStringType::kInternalized)
+                      .ToLocalChecked(),
+                  stateStr.ToLocalChecked())
+            .Check();
       }
     }
 
