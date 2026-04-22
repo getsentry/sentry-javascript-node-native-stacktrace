@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+### Bug Fixes 🐛
+
+- Deadlock under load by @timfish in [#36](https://github.com/getsentry/sentry-javascript-node-native-stacktrace/pull/36)
+
 ## 0.4.0
 
 ### New Features ✨
