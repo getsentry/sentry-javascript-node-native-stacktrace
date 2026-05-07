@@ -77,7 +77,7 @@ jobs:
             node: 24
             binary: linux-x64-musl-137
           - os: ubuntu-22.04
-            container: node:26-alpine3.20
+            container: node:26-alpine3.22
             node: 26
             binary: linux-x64-musl-147
 
@@ -126,7 +126,7 @@ jobs:
             binary: linux-arm64-musl-137
           - os: ubuntu-22.04
             arch: arm64
-            container: node:26-alpine3.20
+            container: node:26-alpine3.22
             node: 26
             binary: linux-arm64-musl-147
 
