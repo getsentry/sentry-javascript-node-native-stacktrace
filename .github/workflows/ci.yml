@@ -54,6 +54,10 @@ jobs:
             container: ghcr.io/getsentry/sentry-test-ubuntu-20.04-amd64:0dd255f3d41d013c1db4c4e08ffd22ee7959c3cc
             node: 24
             binary: linux-x64-glibc-137
+          - os: ubuntu-22.04
+            container: ghcr.io/getsentry/sentry-test-ubuntu-20.04-amd64:0dd255f3d41d013c1db4c4e08ffd22ee7959c3cc
+            node: 26
+            binary: linux-x64-glibc-147
 
             # x64 musl
           - os: ubuntu-22.04
@@ -72,6 +76,10 @@ jobs:
             container: node:24-alpine3.20
             node: 24
             binary: linux-x64-musl-137
+          - os: ubuntu-22.04
+            container: node:26-alpine3.20
+            node: 26
+            binary: linux-x64-musl-147
 
             # arm64 glibc
           - os: ubuntu-22.04
@@ -90,6 +98,10 @@ jobs:
             arch: arm64
             node: 24
             binary: linux-arm64-glibc-137
+          - os: ubuntu-22.04
+            arch: arm64
+            node: 26
+            binary: linux-arm64-glibc-147
 
             # arm64 musl
           - os: ubuntu-22.04
@@ -112,6 +124,11 @@ jobs:
             container: node:24-alpine3.20
             node: 24
             binary: linux-arm64-musl-137
+          - os: ubuntu-22.04
+            arch: arm64
+            container: node:26-alpine3.20
+            node: 26
+            binary: linux-arm64-musl-147
 
             # macos x64
           - os: macos-15-intel
@@ -130,6 +147,10 @@ jobs:
             node: 24
             arch: x64
             binary: darwin-x64-137
+          - os: macos-15-intel
+            node: 26
+            arch: x64
+            binary: darwin-x64-147
 
             # macos arm64
           - os: macos-15
@@ -152,6 +173,11 @@ jobs:
             node: 24
             target_platform: darwin
             binary: darwin-arm64-137
+          - os: macos-15
+            arch: arm64
+            node: 26
+            target_platform: darwin
+            binary: darwin-arm64-147
 
             # windows x64
           - os: windows-2022
@@ -170,6 +196,10 @@ jobs:
             node: 24
             arch: x64
             binary: win32-x64-137
+          - os: windows-2022
+            node: 26
+            arch: x64
+            binary: win32-x64-147
 
     steps:
       - name: Setup (alpine)
@@ -208,6 +238,22 @@ jobs:
         id: python-setup
         with:
           python-version: "3.9.13"
+
+      # Node 26 V8 headers include <source_location>, which requires a newer C++ toolchain.
+      # Our ubuntu-20.04 glibc container defaults to an older compiler, so upgrade only this target.
+      - name: Setup compiler (Node 26 glibc x64)
+        if: matrix.binary == 'linux-x64-glibc-147'
+        run: |
+          # The base container ships a stale Yarn apt source with an expired/missing key.
+          # Remove it so apt-get update can succeed for toolchain installation.
+          rm -f /etc/apt/sources.list.d/yarn.list
+          apt-get update
+          apt-get install -y software-properties-common
+          add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          apt-get update
+          apt-get install -y gcc-12 g++-12
+          echo "CC=gcc-12" >> "$GITHUB_ENV"
+          echo "CXX=g++-12" >> "$GITHUB_ENV"
 
       - name: Setup (arm64| ${{ contains(matrix.container, 'alpine') && 'musl' || 'glibc'  }})
         if: matrix.arch == 'arm64' && !contains(matrix.container, 'alpine') && matrix.target_platform != 'darwin'
@@ -324,7 +370,7 @@ jobs:
             macos-15-intel, # macOS x64
             windows-latest,
           ]
-        node: [18, 20, 22, 24, 25]
+        node: [18, 20, 22, 24, 26]
     steps:
       - name: Check out current commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4

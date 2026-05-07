@@ -93,6 +93,9 @@ function getNativeModule(): Native {
       if (abi === '137') {
         return require('./stack-trace-darwin-x64-137.node');
       }
+      if (abi === '147') {
+        return require('./stack-trace-darwin-x64-147.node');
+      }
     }
 
     if (arch === 'arm64') {
@@ -107,6 +110,9 @@ function getNativeModule(): Native {
       }
       if (abi === '137') {
         return require('./stack-trace-darwin-arm64-137.node');
+      }
+      if (abi === '147') {
+        return require('./stack-trace-darwin-arm64-147.node');
       }
     }
   }
@@ -124,6 +130,9 @@ function getNativeModule(): Native {
       }
       if (abi === '137') {
         return require('./stack-trace-win32-x64-137.node');
+      }
+      if (abi === '147') {
+        return require('./stack-trace-win32-x64-147.node');
       }
     }
   }
@@ -143,6 +152,9 @@ function getNativeModule(): Native {
         if (abi === '137') {
           return require('./stack-trace-linux-x64-musl-137.node');
         }
+        if (abi === '147') {
+          return require('./stack-trace-linux-x64-musl-147.node');
+        }
       }
       if (stdlib === 'glibc') {
         if (abi === '108') {
@@ -156,6 +168,9 @@ function getNativeModule(): Native {
         }
         if (abi === '137') {
           return require('./stack-trace-linux-x64-glibc-137.node');
+        }
+        if (abi === '147') {
+          return require('./stack-trace-linux-x64-glibc-147.node');
         }
       }
     }
@@ -173,6 +188,9 @@ function getNativeModule(): Native {
         if (abi === '137') {
           return require('./stack-trace-linux-arm64-musl-137.node');
         }
+        if (abi === '147') {
+          return require('./stack-trace-linux-arm64-musl-147.node');
+        }
       }
 
       if (stdlib === 'glibc') {
@@ -187,6 +205,9 @@ function getNativeModule(): Native {
         }
         if (abi === '137') {
           return require('./stack-trace-linux-arm64-glibc-137.node');
+        }
+        if (abi === '147') {
+          return require('./stack-trace-linux-arm64-glibc-147.node');
         }
       }
     }
