@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+### New Features ✨
+
+- Support Node v26 by @timfish in [#38](https://github.com/getsentry/sentry-javascript-node-native-stacktrace/pull/38)
+
+### Internal Changes 🔧
+
+- Remove changelog-preview.yml by @chargome in [#37](https://github.com/getsentry/sentry-javascript-node-native-stacktrace/pull/37)
+
 ## 0.4.1
 
 ### Bug Fixes 🐛
