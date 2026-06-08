@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+### Internal Changes 🔧
+
+- Rename node native stacktrace package by @logaretm in [#40](https://github.com/getsentry/sentry-javascript-node-native-stacktrace/pull/40)
+
 ## 0.5.0
 
 ### New Features ✨
