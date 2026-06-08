@@ -1,5 +1,5 @@
 const { foreverWork } = require('./long-work');
-const { registerThread, threadPoll } = require('@sentry-internal/node-native-stacktrace');
+const { registerThread, threadPoll } = require('@sentry/node-native-stacktrace');
 
 registerThread();
 

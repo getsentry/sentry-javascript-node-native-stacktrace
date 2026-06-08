@@ -72,7 +72,7 @@ function getNativeModule(): Native {
       return require('../build/Release/stack-trace.node');
     } catch (e) {
       // eslint-disable-next-line no-console
-      console.warn('The \'@sentry-internal/node-native-stacktrace\' binary could not be found. Use \'@electron/rebuild\' to ensure the native module is built for Electron.');
+      console.warn('The \'@sentry/node-native-stacktrace\' binary could not be found. Use \'@electron/rebuild\' to ensure the native module is built for Electron.');
       throw e;
     }
   }

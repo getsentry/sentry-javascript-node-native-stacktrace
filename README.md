@@ -1,4 +1,4 @@
-# `@sentry-internal/node-native-stacktrace`
+# `@sentry/node-native-stacktrace`
 
 A native Node.js module that can capture JavaScript stack traces for registered
 main or worker threads from any other thread, even if event loops are blocked.
@@ -22,7 +22,7 @@ feature.
 In your main thread or worker threads:
 
 ```ts
-import { registerThread } from "@sentry-internal/node-native-stacktrace";
+import { registerThread } from "@sentry/node-native-stacktrace";
 
 // Register this thread for monitoring
 registerThread();
@@ -31,7 +31,7 @@ registerThread();
 ### 2. Capture stack traces from any thread
 
 ```ts
-import { captureStackTrace } from "@sentry-internal/node-native-stacktrace";
+import { captureStackTrace } from "@sentry/node-native-stacktrace";
 
 // Capture stack traces from all registered threads
 const stacks = captureStackTrace();
@@ -115,7 +115,7 @@ Send regular heartbeats:
 import {
   registerThread,
   threadPoll,
-} from "@sentry-internal/node-native-stacktrace";
+} from "@sentry/node-native-stacktrace";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 // Create async local storage for state tracking
@@ -140,7 +140,7 @@ Monitor all registered threads from a dedicated thread:
 import {
   captureStackTrace,
   getThreadsLastSeen,
-} from "@sentry-internal/node-native-stacktrace";
+} from "@sentry/node-native-stacktrace";
 
 const THRESHOLD = 1000; // 1 second
 
