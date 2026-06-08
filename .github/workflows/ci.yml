@@ -278,6 +278,19 @@ jobs:
         if: matrix.arch != 'arm64'
         run: yarn build:bindings:configure
 
+      - name: Remove unsupported Node LTO flags
+        if: matrix.os == 'windows-2022' && matrix.node == 26 && matrix.arch != 'arm64'
+        shell: pwsh
+        run: |
+          $projectFiles = Get-ChildItem -Path build -Filter *.vcxproj -Recurse
+          foreach ($file in $projectFiles) {
+            $content = Get-Content -Raw -Path $file.FullName
+            $content = $content -replace '(?i)\s*-flto=(thin|full)', ''
+            $content = $content -replace '(?i)\s*/flto=(thin|full)', ''
+            $content = $content -replace '(?i)\s*/opt:lldltojobs=\d+', ''
+            Set-Content -Path $file.FullName -Value $content -NoNewline
+          }
+
       - name: Configure node-gyp (arm64, ${{ contains(matrix.container, 'alpine') && 'musl' || 'glibc'  }})
         if: matrix.arch == 'arm64' && matrix.target_platform != 'darwin'
         run: yarn build:bindings:configure:arm64
