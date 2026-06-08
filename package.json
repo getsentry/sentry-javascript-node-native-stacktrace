@@ -1,5 +1,5 @@
 {
-  "name": "@sentry-internal/node-native-stacktrace",
+  "name": "@sentry/node-native-stacktrace",
   "version": "0.5.0",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

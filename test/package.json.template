@@ -2,6 +2,6 @@
   "name": "node-native-stacktrace-test",
   "license": "MIT",
   "dependencies": {
-    "@sentry-internal/node-native-stacktrace": "{{path}}"
+    "@sentry/node-native-stacktrace": "{{path}}"
   }
 }
