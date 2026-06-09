@@ -16,6 +16,7 @@
     "sentry"
   ],
   "scripts": {
+    "install": "node -p \"'@sentry/node-native-stacktrace@' + require('./package.json').version\"",
     "lint": "yarn lint:eslint && yarn lint:clang",
     "lint:eslint": "eslint . --format stylish",
     "lint:clang": "node scripts/clang-format.mjs",
@@ -24,21 +25,23 @@
     "fix:clang": "node scripts/clang-format.mjs --fix",
     "build": "yarn clean && yarn build:lib && yarn build:bindings:configure && yarn build:bindings",
     "build:lib": "tsc",
-    "build:copy-binary": "node -e \"import { copyBinary } from './lib/index.js'; copyBinary();\"",
+    "build:copy-binary": "node -e \"const { copyBinary } = require('./lib/copy-binary.js'); copyBinary();\"",
     "build:bindings:configure": "node-gyp configure",
     "build:bindings:configure:arm64": "node-gyp configure --arch=arm64 --target_arch=arm64",
-    "build:bindings": "node-gyp build && yarn build:copy-binary",
-    "build:bindings:arm64": "node-gyp build --arch=arm64 && yarn build:copy-binary",
+    "build:bindings": "yarn build:lib && node-gyp build && yarn build:copy-binary",
+    "build:bindings:arm64": "yarn build:lib && node-gyp build --arch=arm64 && yarn build:copy-binary",
     "build:tarball": "npm pack",
     "clean": "node-gyp clean && rm -rf lib && rm -rf build && rm -f *.tgz",
     "test": "node ./test/prepare.mjs && vitest run --poolOptions.forks.singleFork --silent=false --disable-console-intercept"
   },
+  "gypfile": false,
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "detect-libc": "^2.0.4",
-    "node-abi": "^3.89.0"
+    "node-abi": "^3.92.0",
+    "node-gyp": "^11.5.0"
   },
   "devDependencies": {
     "@sentry-internal/eslint-config-sdk": "^9.22.0",
@@ -47,7 +50,6 @@
     "clang-format": "^1.8.0",
     "cross-env": "^7.0.3",
     "eslint": "^7.0.0",
-    "node-gyp": "^11.2.0",
     "typescript": "^5.8.3",
     "vitest": "^3.1.4"
   },

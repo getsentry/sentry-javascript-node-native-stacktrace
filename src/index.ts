@@ -1,19 +1,12 @@
 /* eslint-disable no-console */
 import type { AsyncLocalStorage } from 'node:async_hooks';
 import { spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { env, versions } from 'node:process';
+import { env } from 'node:process';
 import { threadId } from 'node:worker_threads';
-import * as libc from 'detect-libc';
-import { getAbi } from 'node-abi';
-
-const stdlib = libc.familySync();
-const platform = process.env['BUILD_PLATFORM'] || os.platform();
-const arch = process.env['BUILD_ARCH'] || os.arch();
-const abi = getAbi(versions.node, 'node');
-const identifier = [platform, arch, stdlib, abi].filter(c => c !== undefined && c !== null).join('-');
+import { abi, arch, identifier, platform, stdlib } from './constants';
+import { copyBinary } from './copy-binary';
+import { withRebuildLock } from './rebuild-lock';
 
 type AsyncStorageArgs = {
   /** The AsyncLocalStorage instance used to fetch the store */
@@ -56,60 +49,34 @@ interface Native {
   getThreadsLastSeen(): Record<string, number>;
 }
 
-/**
- * Copies the compiled binary from the build directory to the lib directory with the correct name based on the current platform and Node version.
- *
- * @hidden We only use this for copying the binary after building, it is not intended to be used by end users.
- */
-export function copyBinary(): void {
-  const build = path.resolve(__dirname, '..', 'lib');
-  if (!fs.existsSync(build)) {
-    fs.mkdirSync(build, { recursive: true });
-  }
-
-  if (!fs.existsSync(source)) {
-    console.log('Source file does not exist:', source);
-    process.exit(1);
-  } else {
-    if (fs.existsSync(target)) {
-      console.log('Target file already exists, overwriting it');
-      fs.unlinkSync(target);
-    }
-    console.log('Copying', source, 'to', target);
-    fs.copyFileSync(source, target);
-  }
-}
-
-const source = path.join(__dirname, '..', 'build', 'Release', 'stack-trace.node');
-const target = path.join(__dirname, '..', 'lib', `stack-trace-${identifier}.node`);
-
 function clean(err: Buffer): string {
   return err.toString().trim();
 }
 
 function recompileFromSource(): void {
   const cwd = path.join(__dirname, '..');
+  // Resolve node-gyp from its package entry so it's found even when
+  // node_modules/.bin/ is not in PATH (e.g. outside of npm run scripts).
+  const nodeGyp = require.resolve('node-gyp/bin/node-gyp.js');
   console.log('Compiling from source...');
-  let spawn = spawnSync('node-gyp', ['configure'], {
+  let spawn = spawnSync(process.execPath, [nodeGyp, 'configure'], {
     cwd,
     stdio: ['inherit', 'inherit', 'pipe'],
     env: process.env,
-    shell: true,
   });
   if (spawn.status !== 0) {
     console.log('Failed to configure gyp');
-    console.log(clean(spawn.stderr));
+    if (spawn.stderr) console.log(clean(spawn.stderr));
     return;
   }
-  spawn = spawnSync('node-gyp', ['build'], {
+  spawn = spawnSync(process.execPath, [nodeGyp, 'build'], {
     cwd,
     stdio: ['inherit', 'inherit', 'pipe'],
     env: process.env,
-    shell: true,
   });
   if (spawn.status !== 0) {
     console.log('Failed to build bindings');
-    console.log(clean(spawn.stderr));
+    if (spawn.stderr) console.log(clean(spawn.stderr));
     return;
   }
 
@@ -280,7 +247,7 @@ function getNativeModule(): Native {
     try {
       return require('../build/Release/stack-trace.node');
     } catch (e) {
-      console.warn('The \'@sentry-internal/node-native-stacktrace\' binary could not be found. Use \'@electron/rebuild\' to ensure the native module is built for Electron.');
+      console.warn('The \'@sentry/node-native-stacktrace\' binary could not be found. Use \'@electron/rebuild\' to ensure the native module is built for Electron.');
       throw e;
     }
   }
@@ -290,13 +257,15 @@ function getNativeModule(): Native {
     return nativeModule;
   }
 
-  try {
-    recompileFromSource();
-  } catch (e) {
-    console.warn('Failed to compile from source:', e);
-  }
+  withRebuildLock(() => {
+    try {
+      recompileFromSource();
+    } catch (e) {
+      console.warn('Failed to compile from source:', e);
+    }
+  });
 
-  // Try again after attempting to recompile, in case the binary is now available.
+  // Try again after recompile (or after another caller finished theirs).
   nativeModule = tryLoad();
 
   if (nativeModule) {
@@ -308,7 +277,26 @@ function getNativeModule(): Native {
 
 const native = getNativeModule();
 
+/**
+ * Registers the current thread with the native module.
+ *
+ * This should be called on every thread that you want to capture stack traces from.
+ *
+ * @param threadName The name of the thread
+ *
+ * threadName defaults to the `threadId` if not provided.
+ */
 export function registerThread(threadName?: string): void;
+/**
+ * Registers the current thread with the native module.
+ *
+ * This should be called on every thread that you want to capture stack traces from.
+ *
+ * @param storageOrThread Either the name of the thread, or an object containing an AsyncLocalStorage instance and optional storage key.
+ * @param threadName The name of the thread, if the first argument is an object.
+ *
+ * threadName defaults to the `threadId` if not provided.
+ */
 export function registerThread(storageOrThread: AsyncStorageArgs | string, threadName?: string): void;
 /**
  * Registers the current thread with the native module.

@@ -1,5 +1,5 @@
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +40,16 @@ function installTarballAsDependency(root) {
 
   console.log('Installing dependencies...');
   execSync('yarn install', { cwd: root, stdio: 'inherit' });
+
+  // For recompile from source tests, we need to ensure the pre-built binaries are removed
+  if (process.env.DELETE_BINARIES) {
+    const unpackedDir = join(root, 'node_modules', '@sentry/node-native-stacktrace', 'lib');
+    readdirSync(unpackedDir).forEach(file => {
+      if (file.endsWith('.node')) {
+        rmSync(join(unpackedDir, file));
+      }
+    });
+  }
 }
 
 installTarballAsDependency(__dirname);

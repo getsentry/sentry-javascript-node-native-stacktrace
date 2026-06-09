@@ -7,7 +7,7 @@ const __dirname = import.meta.dirname || new URL('.', import.meta.url).pathname;
 const NODE_MAJOR_VERSION = parseInt(process.versions.node.split('.')[0], 10);
 
 // macOS emulated x64 in CI is very slow!
-const timeout = process.env.CI && process.platform === 'darwin' ? 60000 : 20000;
+const timeout = (process.env.CI && process.platform === 'darwin') || process.env.DELETE_BINARIES ? 60000 : 20000;
 
 async function runTest(...paths) {
   console.time('Test Run');
