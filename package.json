@@ -16,7 +16,6 @@
     "sentry"
   ],
   "scripts": {
-    "install": "node scripts/check-build.mjs",
     "lint": "yarn lint:eslint && yarn lint:clang",
     "lint:eslint": "eslint . --format stylish",
     "lint:clang": "node scripts/clang-format.mjs",
@@ -25,15 +24,14 @@
     "fix:clang": "node scripts/clang-format.mjs --fix",
     "build": "yarn clean && yarn build:lib && yarn build:bindings:configure && yarn build:bindings",
     "build:lib": "tsc",
+    "build:copy-binary": "node -e \"import { copyBinary } from './lib/index.js'; copyBinary();\"",
     "build:bindings:configure": "node-gyp configure",
     "build:bindings:configure:arm64": "node-gyp configure --arch=arm64 --target_arch=arm64",
-    "build:bindings": "node-gyp build && node scripts/copy-target.mjs",
-    "build:bindings:arm64": "node-gyp build --arch=arm64 && node scripts/copy-target.mjs",
+    "build:bindings": "node-gyp build && yarn build:copy-binary",
+    "build:bindings:arm64": "node-gyp build --arch=arm64 && yarn build:copy-binary",
     "build:tarball": "npm pack",
     "clean": "node-gyp clean && rm -rf lib && rm -rf build && rm -f *.tgz",
-    "test": "yarn test:install && yarn test:prepare && vitest run --poolOptions.forks.singleFork --silent=false --disable-console-intercept",
-    "test:prepare": "node ./test/prepare.mjs",
-    "test:install": "cross-env ALWAYS_THROW=true yarn install"
+    "test": "node ./test/prepare.mjs && vitest run --poolOptions.forks.singleFork --silent=false --disable-console-intercept"
   },
   "engines": {
     "node": ">=18"

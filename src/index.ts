@@ -1,14 +1,17 @@
+/* eslint-disable no-console */
 import type { AsyncLocalStorage } from 'node:async_hooks';
-import { arch as _arch, platform as _platform } from 'node:os';
-import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { env, versions } from 'node:process';
 import { threadId } from 'node:worker_threads';
-import { familySync } from 'detect-libc';
+import * as libc from 'detect-libc';
 import { getAbi } from 'node-abi';
 
-const stdlib = familySync();
-const platform = process.env['BUILD_PLATFORM'] || _platform();
-const arch = process.env['BUILD_ARCH'] || _arch();
+const stdlib = libc.familySync();
+const platform = process.env['BUILD_PLATFORM'] || os.platform();
+const arch = process.env['BUILD_ARCH'] || os.arch();
 const abi = getAbi(versions.node, 'node');
 const identifier = [platform, arch, stdlib, abi].filter(c => c !== undefined && c !== null).join('-');
 
@@ -53,7 +56,213 @@ interface Native {
   getThreadsLastSeen(): Record<string, number>;
 }
 
+/**
+ * Copies the compiled binary from the build directory to the lib directory with the correct name based on the current platform and Node version.
+ *
+ * @hidden We only use this for copying the binary after building, it is not intended to be used by end users.
+ */
+export function copyBinary(): void {
+  const build = path.resolve(__dirname, '..', 'lib');
+  if (!fs.existsSync(build)) {
+    fs.mkdirSync(build, { recursive: true });
+  }
+
+  if (!fs.existsSync(source)) {
+    console.log('Source file does not exist:', source);
+    process.exit(1);
+  } else {
+    if (fs.existsSync(target)) {
+      console.log('Target file already exists, overwriting it');
+      fs.unlinkSync(target);
+    }
+    console.log('Copying', source, 'to', target);
+    fs.copyFileSync(source, target);
+  }
+}
+
+const source = path.join(__dirname, '..', 'build', 'Release', 'stack-trace.node');
+const target = path.join(__dirname, '..', 'lib', `stack-trace-${identifier}.node`);
+
+function clean(err: Buffer): string {
+  return err.toString().trim();
+}
+
+function recompileFromSource(): void {
+  const cwd = path.join(__dirname, '..');
+  console.log('Compiling from source...');
+  let spawn = spawnSync('node-gyp', ['configure'], {
+    cwd,
+    stdio: ['inherit', 'inherit', 'pipe'],
+    env: process.env,
+    shell: true,
+  });
+  if (spawn.status !== 0) {
+    console.log('Failed to configure gyp');
+    console.log(clean(spawn.stderr));
+    return;
+  }
+  spawn = spawnSync('node-gyp', ['build'], {
+    cwd,
+    stdio: ['inherit', 'inherit', 'pipe'],
+    env: process.env,
+    shell: true,
+  });
+  if (spawn.status !== 0) {
+    console.log('Failed to build bindings');
+    console.log(clean(spawn.stderr));
+    return;
+  }
+
+  console.log('Successfully compiled from source...');
+
+  copyBinary();
+}
+
 // eslint-disable-next-line complexity
+function tryLoad(): Native | undefined {
+  try {
+    // We could just dynamically require the module based on the identifier, but
+    // doing so means that bundlers will not pick these files up.
+    if (platform === 'darwin') {
+      if (arch === 'x64') {
+        if (abi === '108') {
+          return require('./stack-trace-darwin-x64-108.node');
+        }
+        if (abi === '115') {
+          return require('./stack-trace-darwin-x64-115.node');
+        }
+        if (abi === '127') {
+          return require('./stack-trace-darwin-x64-127.node');
+        }
+        if (abi === '137') {
+          return require('./stack-trace-darwin-x64-137.node');
+        }
+        if (abi === '147') {
+          return require('./stack-trace-darwin-x64-147.node');
+        }
+      }
+
+      if (arch === 'arm64') {
+        if (abi === '108') {
+          return require('./stack-trace-darwin-arm64-108.node');
+        }
+        if (abi === '115') {
+          return require('./stack-trace-darwin-arm64-115.node');
+        }
+        if (abi === '127') {
+          return require('./stack-trace-darwin-arm64-127.node');
+        }
+        if (abi === '137') {
+          return require('./stack-trace-darwin-arm64-137.node');
+        }
+        if (abi === '147') {
+          return require('./stack-trace-darwin-arm64-147.node');
+        }
+      }
+    }
+
+    if (platform === 'win32') {
+      if (arch === 'x64') {
+        if (abi === '108') {
+          return require('./stack-trace-win32-x64-108.node');
+        }
+        if (abi === '115') {
+          return require('./stack-trace-win32-x64-115.node');
+        }
+        if (abi === '127') {
+          return require('./stack-trace-win32-x64-127.node');
+        }
+        if (abi === '137') {
+          return require('./stack-trace-win32-x64-137.node');
+        }
+        if (abi === '147') {
+          return require('./stack-trace-win32-x64-147.node');
+        }
+      }
+    }
+
+    if (platform === 'linux') {
+      if (arch === 'x64') {
+        if (stdlib === 'musl') {
+          if (abi === '108') {
+            return require('./stack-trace-linux-x64-musl-108.node');
+          }
+          if (abi === '115') {
+            return require('./stack-trace-linux-x64-musl-115.node');
+          }
+          if (abi === '127') {
+            return require('./stack-trace-linux-x64-musl-127.node');
+          }
+          if (abi === '137') {
+            return require('./stack-trace-linux-x64-musl-137.node');
+          }
+          if (abi === '147') {
+            return require('./stack-trace-linux-x64-musl-147.node');
+          }
+        }
+        if (stdlib === 'glibc') {
+          if (abi === '108') {
+            return require('./stack-trace-linux-x64-glibc-108.node');
+          }
+          if (abi === '115') {
+            return require('./stack-trace-linux-x64-glibc-115.node');
+          }
+          if (abi === '127') {
+            return require('./stack-trace-linux-x64-glibc-127.node');
+          }
+          if (abi === '137') {
+            return require('./stack-trace-linux-x64-glibc-137.node');
+          }
+          if (abi === '147') {
+            return require('./stack-trace-linux-x64-glibc-147.node');
+          }
+        }
+      }
+      if (arch === 'arm64') {
+        if (stdlib === 'musl') {
+          if (abi === '108') {
+            return require('./stack-trace-linux-arm64-musl-108.node');
+          }
+          if (abi === '115') {
+            return require('./stack-trace-linux-arm64-musl-115.node');
+          }
+          if (abi === '127') {
+            return require('./stack-trace-linux-arm64-musl-127.node');
+          }
+          if (abi === '137') {
+            return require('./stack-trace-linux-arm64-musl-137.node');
+          }
+          if (abi === '147') {
+            return require('./stack-trace-linux-arm64-musl-147.node');
+          }
+        }
+
+        if (stdlib === 'glibc') {
+          if (abi === '108') {
+            return require('./stack-trace-linux-arm64-glibc-108.node');
+          }
+          if (abi === '115') {
+            return require('./stack-trace-linux-arm64-glibc-115.node');
+          }
+          if (abi === '127') {
+            return require('./stack-trace-linux-arm64-glibc-127.node');
+          }
+          if (abi === '137') {
+            return require('./stack-trace-linux-arm64-glibc-137.node');
+          }
+          if (abi === '147') {
+            return require('./stack-trace-linux-arm64-glibc-147.node');
+          }
+        }
+      }
+    }
+
+    return require(`./stack-trace-${identifier}.node`);
+  } catch {
+    return undefined;
+  }
+}
+
 function getNativeModule(): Native {
   // If a binary path is specified, use that.
   if (env['SENTRY_STACK_TRACE_BINARY_PATH']) {
@@ -63,7 +272,7 @@ function getNativeModule(): Native {
 
   // If a user specifies a different binary dir, they are in control of the binaries being moved there
   if (env['SENTRY_STACK_TRACE_BINARY_DIR']) {
-    const binaryPath = join(resolve(env['SENTRY_STACK_TRACE_BINARY_DIR']), `stack-trace-${identifier}.node`);
+    const binaryPath = path.join(path.resolve(env['SENTRY_STACK_TRACE_BINARY_DIR']), `stack-trace-${identifier}.node`);
     return require(binaryPath);
   }
 
@@ -71,128 +280,30 @@ function getNativeModule(): Native {
     try {
       return require('../build/Release/stack-trace.node');
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.warn('The \'@sentry-internal/node-native-stacktrace\' binary could not be found. Use \'@electron/rebuild\' to ensure the native module is built for Electron.');
       throw e;
     }
   }
 
-  // We need the fallthrough so that in the end, we can fallback to the dynamic require.
-  // This is for cases where precompiled binaries were not provided, but may have been compiled from source.
-  if (platform === 'darwin') {
-    if (arch === 'x64') {
-      if (abi === '108') {
-        return require('./stack-trace-darwin-x64-108.node');
-      }
-      if (abi === '115') {
-        return require('./stack-trace-darwin-x64-115.node');
-      }
-      if (abi === '127') {
-        return require('./stack-trace-darwin-x64-127.node');
-      }
-      if (abi === '137') {
-        return require('./stack-trace-darwin-x64-137.node');
-      }
-    }
-
-    if (arch === 'arm64') {
-      if (abi === '108') {
-        return require('./stack-trace-darwin-arm64-108.node');
-      }
-      if (abi === '115') {
-        return require('./stack-trace-darwin-arm64-115.node');
-      }
-      if (abi === '127') {
-        return require('./stack-trace-darwin-arm64-127.node');
-      }
-      if (abi === '137') {
-        return require('./stack-trace-darwin-arm64-137.node');
-      }
-    }
+  let nativeModule = tryLoad();
+  if (nativeModule) {
+    return nativeModule;
   }
 
-  if (platform === 'win32') {
-    if (arch === 'x64') {
-      if (abi === '108') {
-        return require('./stack-trace-win32-x64-108.node');
-      }
-      if (abi === '115') {
-        return require('./stack-trace-win32-x64-115.node');
-      }
-      if (abi === '127') {
-        return require('./stack-trace-win32-x64-127.node');
-      }
-      if (abi === '137') {
-        return require('./stack-trace-win32-x64-137.node');
-      }
-    }
+  try {
+    recompileFromSource();
+  } catch (e) {
+    console.warn('Failed to compile from source:', e);
   }
 
-  if (platform === 'linux') {
-    if (arch === 'x64') {
-      if (stdlib === 'musl') {
-        if (abi === '108') {
-          return require('./stack-trace-linux-x64-musl-108.node');
-        }
-        if (abi === '115') {
-          return require('./stack-trace-linux-x64-musl-115.node');
-        }
-        if (abi === '127') {
-          return require('./stack-trace-linux-x64-musl-127.node');
-        }
-        if (abi === '137') {
-          return require('./stack-trace-linux-x64-musl-137.node');
-        }
-      }
-      if (stdlib === 'glibc') {
-        if (abi === '108') {
-          return require('./stack-trace-linux-x64-glibc-108.node');
-        }
-        if (abi === '115') {
-          return require('./stack-trace-linux-x64-glibc-115.node');
-        }
-        if (abi === '127') {
-          return require('./stack-trace-linux-x64-glibc-127.node');
-        }
-        if (abi === '137') {
-          return require('./stack-trace-linux-x64-glibc-137.node');
-        }
-      }
-    }
-    if (arch === 'arm64') {
-      if (stdlib === 'musl') {
-        if (abi === '108') {
-          return require('./stack-trace-linux-arm64-musl-108.node');
-        }
-        if (abi === '115') {
-          return require('./stack-trace-linux-arm64-musl-115.node');
-        }
-        if (abi === '127') {
-          return require('./stack-trace-linux-arm64-musl-127.node');
-        }
-        if (abi === '137') {
-          return require('./stack-trace-linux-arm64-musl-137.node');
-        }
-      }
+  // Try again after attempting to recompile, in case the binary is now available.
+  nativeModule = tryLoad();
 
-      if (stdlib === 'glibc') {
-        if (abi === '108') {
-          return require('./stack-trace-linux-arm64-glibc-108.node');
-        }
-        if (abi === '115') {
-          return require('./stack-trace-linux-arm64-glibc-115.node');
-        }
-        if (abi === '127') {
-          return require('./stack-trace-linux-arm64-glibc-127.node');
-        }
-        if (abi === '137') {
-          return require('./stack-trace-linux-arm64-glibc-137.node');
-        }
-      }
-    }
+  if (nativeModule) {
+    return nativeModule;
   }
 
-  return require(`./stack-trace-${identifier}.node`);
+  throw new Error('Failed to load native module. A prebuilt binary for your platform and Node version was not found and recompiling from source failed.');
 }
 
 const native = getNativeModule();
