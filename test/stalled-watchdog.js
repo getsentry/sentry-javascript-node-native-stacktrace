@@ -1,4 +1,4 @@
-const { captureStackTrace, getThreadsLastSeen } = require('@sentry-internal/node-native-stacktrace');
+const { captureStackTrace, getThreadsLastSeen } = require('@sentry/node-native-stacktrace');
 
 const THRESHOLD = 500; // 1 second
 

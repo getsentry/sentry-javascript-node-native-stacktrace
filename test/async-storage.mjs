@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Worker } from 'node:worker_threads';
-import { registerThread } from '@sentry-internal/node-native-stacktrace';
+import { registerThread } from '@sentry/node-native-stacktrace';
 import { longWork } from './long-work.js';
 
 const asyncLocalStorage = new AsyncLocalStorage();
