@@ -69,5 +69,10 @@ export function withRebuildLock(work: () => void): void {
     } finally {
       release(fd);
     }
+  } else {
+    // A third (or later) waiter lost the race to reacquire the lock after the
+    // first holder finished. Another process is now rebuilding — wait for it
+    // to release before returning, so the caller can safely load the binary.
+    waitForLockRelease();
   }
 }
