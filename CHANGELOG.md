@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+### Bug Fixes 🐛
+
+- Remove V8_DEPRECATION_WARNINGS define to fix build with GCC <= 12 by @timfish in [#42](https://github.com/getsentry/sentry-javascript-node-native-stacktrace/pull/42)
+
 ## 0.5.1
 
 ### Internal Changes 🔧
