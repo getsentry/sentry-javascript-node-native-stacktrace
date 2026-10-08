@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes 🐛
+
+- Limit the serialization of `asyncState` and `pollState` (depth, properties
+  per object, total reads and total string length, with markers such as
+  `"[Object]"` and `"[MaxProperties ~]"` where data was cut), so capturing a
+  stack trace no longer freezes, crashes or runs out of memory on large or
+  deeply linked state. Exceptions thrown while reading the state no longer
+  reach the captured thread, only own properties are serialized, and `Proxy`
+  values become `"[Proxy]"`.
+
 ## 0.5.2
 
 ### Bug Fixes 🐛
