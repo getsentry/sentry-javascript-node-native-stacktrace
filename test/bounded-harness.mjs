@@ -14,6 +14,14 @@ import { registerThread } from '@sentry/node-native-stacktrace';
 
 export const MAX_BLOCK_MS = 10000;
 
+// Node 18 on macOS reports maxRSS in bytes instead of kilobytes.
+const MAX_RSS_DIVISOR =
+  process.platform === 'darwin' && Number(process.versions.node.split('.')[0]) < 20 ? 1024 : 1;
+
+function maxRssKb() {
+  return process.resourceUsage().maxRSS / MAX_RSS_DIVISOR;
+}
+
 /**
  * Busy-waits inside the current AsyncLocalStorage store until flags[1] is set.
  * Sets flags[0] first, which starts the capture in bounded-watchdog.mjs.
@@ -66,7 +74,7 @@ export function captureWhileBlocked({ store, stateLookup, beforeBlock, afterBloc
   // flags[0]: main thread is blocked inside the store, flags[1]: capture is done
   const flags = new Int32Array(new SharedArrayBuffer(8));
   const watchdog = startWatchdog(flags);
-  const maxRssBeforeKb = process.resourceUsage().maxRSS;
+  const maxRssBeforeKb = maxRssKb();
 
   let setupError = null;
   try {
@@ -87,7 +95,7 @@ export function captureWhileBlocked({ store, stateLookup, beforeBlock, afterBloc
   afterBlock?.();
 
   watchdog.once('message', result => {
-    const maxRssGrowthMb = (process.resourceUsage().maxRSS - maxRssBeforeKb) / 1024;
+    const maxRssGrowthMb = (maxRssKb() - maxRssBeforeKb) / 1024;
     printResult({ ...result, appError, setupError, timedOut, maxRssGrowthMb, ...report?.() });
   });
 }
