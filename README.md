@@ -233,3 +233,37 @@ Sends a heartbeat from the current thread.
 
 Returns the time in milliseconds since each registered thread called
 `threadPoll()`.
+
+### State serialization
+
+`asyncState` and `pollState` are best-effort, size-limited snapshots.
+`asyncState` is read on the captured thread while its JavaScript is
+interrupted, so the serialization is limited whatever the state contains:
+
+- Values are copied like `JSON.stringify` copies them: own enumerable
+  string-keyed properties only, while functions, symbols, BigInts, `undefined`
+  and circular references are left out. Shared references that are not circular
+  are copied each time they appear. Integer-like keys of plain objects (e.g.
+  `"0"`) are left out, and `toJSON` methods are not called.
+- Getters run, as they do with `JSON.stringify`. A property whose getter throws
+  is left out. Exceptions never reach the code running on the captured thread,
+  but termination (e.g. `worker.terminate()`) still takes effect. A `Proxy`
+  becomes `"[Proxy]"` without running its traps.
+- Limits, with markers replacing what was cut:
+  - Depth 10: objects and arrays nested deeper become `"[Object]"` or
+    `"[Array]"`.
+  - 1,000 properties or elements per object or array: the rest is replaced by a
+    single `"[MaxProperties ~]"` entry (the next element of an array, or the
+    value of the first key left out of an object).
+  - 20,000 property or element reads in total: after that nothing more is read.
+    The objects and arrays being copied end with a `"[MaxProperties ~]"` entry,
+    and later objects and arrays become `"[Object]"` or `"[Array]"`.
+  - 1,048,576 characters (UTF-16 code units) of strings in total, counting
+    values and keys: the string that crosses the limit is cut and ends with
+    `"..."`, and later strings become `"[String]"`. An object whose next key
+    does not fit ends with a `"...": "[MaxProperties ~]"` entry.
+- The limits bound the size of the snapshot and how deep the serialization
+  recurses. The serialization still reads the full list of own keys of each
+  object it copies, and still runs getters, so a slow getter or a very wide
+  object delays the snapshot.
+- If the state cannot be read at all, `asyncState` is left out.

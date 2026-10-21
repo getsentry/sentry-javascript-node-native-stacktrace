@@ -21,12 +21,42 @@
 
 #define SUPPORTS_ASYNC_CONTEXT_FRAME NODE_MAJOR_VERSION >= 22
 #define GET_CONTINUATION_PRESERVED_EMBEDDER_DATA_V2 V8_MAJOR_VERSION >= 14
+// String::WriteV2 and Object::SetPrototypeV2 replace String::Write and
+// Object::SetPrototype, which newer V8 versions no longer provide
+#define USE_V8_API_V2                                                          \
+  (V8_MAJOR_VERSION > 13 || (V8_MAJOR_VERSION == 13 && V8_MINOR_VERSION >= 6))
 
 using namespace v8;
 using namespace node;
 using namespace std::chrono;
 
 static const int kMaxStackFrames = 50;
+
+// Limits for serializing thread state (AsyncLocalStorage state and threadPoll
+// state). The AsyncLocalStorage state is serialized on the captured thread
+// while its JavaScript is interrupted, so the work must stay bounded whatever
+// the shape of the object graph.
+//
+// Maximum nesting depth of objects/arrays. The root value is at depth 0, and
+// objects/arrays at this depth are replaced by "[Object]"/"[Array]". Sentry
+// keeps breadcrumb data at isolationScope._breadcrumbs[i].data (depth 4), so
+// five levels below `data` are kept (Sentry normalizes events to depth 3).
+static const size_t kMaxStateDepth = 10;
+// Maximum number of properties/elements copied per object/array. The rest is
+// replaced by a single "[MaxProperties ~]" entry.
+static const uint32_t kMaxStateBreadth = 1000;
+// Maximum number of properties/elements read per serialization, including
+// reads that throw. Shared references are copied once per path, which can grow
+// exponentially without this budget. Once it is used up, nothing more is read:
+// the objects/arrays being copied end with a "[MaxProperties ~]" entry.
+static const uint32_t kMaxStateNodes = 20000;
+// Maximum total length (UTF-16 code units) of the strings copied per
+// serialization, counting string values and property keys. Without it, one
+// large string referenced many times is copied every time. A string value that
+// does not fit is cut to the rest of the budget plus "...", later string values
+// become "[String]", and an object whose next key does not fit ends with a
+// "...": "[MaxProperties ~]" entry.
+static const uint32_t kMaxStateStringLength = 1024 * 1024;
 
 struct AsyncLocalStorageLookup {
   // Async local storage instance associated with this thread
@@ -93,18 +123,134 @@ struct ThreadResult {
   std::string poll_state;
 };
 
+// Traversal state of one SanitizeForJSON walk
+struct SanitizeState {
+  explicit SanitizeState(v8::TryCatch &try_catch) : try_catch(try_catch) {}
+
+  // Catches exceptions thrown by getters during the walk
+  v8::TryCatch &try_catch;
+  // Objects/arrays on the current path, used for cycle detection. Its size is
+  // the current depth, so it never exceeds kMaxStateDepth.
+  std::vector<v8::Local<v8::Object>> ancestors;
+  // Properties/elements that may still be read, see kMaxStateNodes
+  uint32_t remaining_nodes = kMaxStateNodes;
+  // String length that may still be copied, see kMaxStateStringLength
+  uint32_t remaining_string_length = kMaxStateStringLength;
+  // Set when execution is terminating; the walk must not call into V8 anymore
+  bool terminating = false;
+};
+
+// Creates one of the marker strings that replace cut-off data
+template <int N>
+static v8::Local<v8::String> Marker(v8::Isolate *isolate,
+                                    const char (&text)[N]) {
+  return v8::String::NewFromUtf8Literal(isolate, text,
+                                        v8::NewStringType::kInternalized);
+}
+
+// Handles a failed V8 call during the walk: clears the exception so the walk
+// can continue without the value. If execution is terminating, the exception
+// is kept and the walk stops (see KeepTermination).
+static void RecoverFromException(SanitizeState &state) {
+  if (!state.try_catch.CanContinue()) {
+    state.terminating = true;
+    return;
+  }
+  state.try_catch.Reset();
+}
+
+// Takes one read from the budget before a property/element is read. Returns
+// false once the budget is used up.
+static bool TakeNode(SanitizeState &state) {
+  if (state.remaining_nodes == 0) {
+    return false;
+  }
+  state.remaining_nodes--;
+  return true;
+}
+
+// An execution termination (e.g. from worker.terminate()) caught by a TryCatch
+// does not survive it: the thread would keep running. This cancels the caught
+// termination and requests it again, so it takes effect as soon as JavaScript
+// runs again on this thread. Ordinary exceptions stay caught. Call this last
+// in the TryCatch's scope.
+static void KeepTermination(v8::Isolate *isolate, v8::TryCatch &try_catch) {
+  if (!try_catch.HasTerminated() && !isolate->IsExecutionTerminating()) {
+    return;
+  }
+  isolate->CancelTerminateExecution();
+  try_catch.Reset();
+  isolate->TerminateExecution();
+}
+
+// Returns the string if it fits into the remaining string budget. Otherwise
+// returns the part that still fits followed by "...", or "[String]" once the
+// budget is used up. Only the part that is kept is copied (V8 may flatten a
+// concatenated string first).
+static v8::Local<v8::String> SanitizeString(v8::Isolate *isolate,
+                                            v8::Local<v8::String> str,
+                                            SanitizeState &state) {
+  auto length = static_cast<uint32_t>(str->Length());
+  if (length <= state.remaining_string_length) {
+    state.remaining_string_length -= length;
+    return str;
+  }
+
+  auto prefix_length = state.remaining_string_length;
+  state.remaining_string_length = 0;
+  if (prefix_length == 0) {
+    return Marker(isolate, "[String]");
+  }
+
+  std::vector<uint16_t> buffer(prefix_length);
+#if USE_V8_API_V2
+  str->WriteV2(isolate, 0, prefix_length, buffer.data());
+#else
+  str->Write(isolate, buffer.data(), 0, static_cast<int>(prefix_length),
+             v8::String::NO_NULL_TERMINATION);
+#endif
+  // Do not split a surrogate pair
+  auto last = buffer[prefix_length - 1];
+  if (last >= 0xD800 && last <= 0xDBFF) {
+    prefix_length--;
+  }
+
+  v8::Local<v8::String> prefix;
+  if (!v8::String::NewFromTwoByte(isolate, buffer.data(),
+                                  v8::NewStringType::kNormal,
+                                  static_cast<int>(prefix_length))
+           .ToLocal(&prefix)) {
+    return Marker(isolate, "[String]");
+  }
+  return v8::String::Concat(isolate, prefix, Marker(isolate, "..."));
+}
+
 // Recursively sanitize a value to be safely JSON-stringifiable by:
 // - Removing properties whose values are BigInt, Function, or Symbol
 //   (dropped for objects, omitted from arrays)
 // - Breaking cycles by omitting repeated objects (undefined -> dropped/omitted)
-// - Preserving primitives and traversing arrays/objects
-static v8::Local<v8::Value>
-SanitizeForJSON(v8::Isolate *isolate, v8::Local<v8::Context> context,
-                v8::Local<v8::Value> value,
-                std::vector<v8::Local<v8::Object>> &ancestors) {
+// - Dropping values that throw when read
+// - Preserving primitives and traversing arrays/objects (own enumerable
+//   string-keyed properties only)
+// - Replacing Proxies by "[Proxy]" without running their traps
+// - Bounding the work: objects/arrays nested kMaxStateDepth deep, or reached
+//   once kMaxStateNodes reads are used up, are replaced by
+//   "[Object]"/"[Array]", and objects/arrays cut by kMaxStateBreadth,
+//   kMaxStateNodes or kMaxStateStringLength end with a "[MaxProperties ~]"
+//   entry
+// The copies have no prototype, so JSON::Stringify finds no inherited toJSON
+// on them, and are built with CreateDataProperty, which runs no setters.
+// Returns undefined if the walk stopped because execution is terminating.
+static v8::Local<v8::Value> SanitizeForJSON(v8::Isolate *isolate,
+                                            v8::Local<v8::Context> context,
+                                            v8::Local<v8::Value> value,
+                                            SanitizeState &state) {
+  if (value->IsString()) {
+    return SanitizeString(isolate, value.As<v8::String>(), state);
+  }
+
   // Fast-path for primitives that are always JSON-compatible
-  if (value->IsNull() || value->IsBoolean() || value->IsNumber() ||
-      value->IsString()) {
+  if (value->IsNull() || value->IsBoolean() || value->IsNumber()) {
     return value;
   }
 
@@ -116,110 +262,165 @@ SanitizeForJSON(v8::Isolate *isolate, v8::Local<v8::Context> context,
     return v8::Undefined(isolate);
   }
 
-  // Arrays
-  if (value->IsArray()) {
-    auto arr = value.As<v8::Array>();
-    // Cycle detection
-    auto arr_obj = value.As<v8::Object>();
-    for (auto &a : ancestors) {
-      if (a->StrictEquals(arr_obj)) {
-        return v8::Undefined(isolate);
-      }
-    }
+  // Fallback: return as-is (shouldn't hit here for other exotic types)
+  if (!value->IsObject()) {
+    return value;
+  }
 
+  // Reading a Proxy's keys or values would run its traps
+  if (value->IsProxy()) {
+    return Marker(isolate, "[Proxy]");
+  }
+
+  // Arrays and objects (including Dates, RegExps, Maps as objects; we only
+  // traverse enumerable own props)
+  auto obj = value.As<v8::Object>();
+  // Cycle detection
+  for (auto &a : state.ancestors) {
+    if (a->StrictEquals(obj)) {
+      return v8::Undefined(isolate);
+    }
+  }
+
+  auto is_array = value->IsArray();
+  if (state.ancestors.size() >= kMaxStateDepth || state.remaining_nodes == 0) {
+    return is_array ? Marker(isolate, "[Array]") : Marker(isolate, "[Object]");
+  }
+
+  v8::Local<v8::Value> result = v8::Undefined(isolate);
+  state.ancestors.push_back(obj);
+
+  if (is_array) {
+    auto arr = value.As<v8::Array>();
     auto length = arr->Length();
     auto out = v8::Array::New(isolate, 0);
-    ancestors.push_back(arr_obj);
+#if USE_V8_API_V2
+    out->SetPrototypeV2(context, v8::Null(isolate)).FromMaybe(false);
+#else
+    out->SetPrototype(context, v8::Null(isolate)).FromMaybe(false);
+#endif
 
     uint32_t out_index = 0;
-    for (uint32_t i = 0; i < length; ++i) {
-      auto maybeEl = arr->Get(context, i);
+    uint32_t i = 0;
+    for (; i < length && i < kMaxStateBreadth && !state.terminating; ++i) {
+      if (!TakeNode(state)) {
+        break;
+      }
+
       v8::Local<v8::Value> el;
-      if (!maybeEl.ToLocal(&el)) {
-        el = v8::Undefined(isolate);
+      if (!arr->Get(context, i).ToLocal(&el)) {
+        RecoverFromException(state);
+        continue; // omit entries that cannot be read
       }
 
-      auto sanitized = SanitizeForJSON(isolate, context, el, ancestors);
+      auto sanitized = SanitizeForJSON(isolate, context, el, state);
       if (!sanitized->IsUndefined()) {
-        out->Set(context, out_index++, sanitized)
-            .Check(); // omit undefined entries entirely
+        out->CreateDataProperty(context, out_index++, sanitized)
+            .FromMaybe(false); // omit undefined entries entirely
       }
     }
-    ancestors.pop_back();
-    return out;
+
+    if (i < length && !state.terminating) {
+      out->CreateDataProperty(context, out_index,
+                              Marker(isolate, "[MaxProperties ~]"))
+          .FromMaybe(false);
+    }
+    result = out;
+  } else {
+    // Collect own enumerable property names (string-keyed). Integer-indexed
+    // keys are skipped, as they were never serialized.
+    v8::Local<v8::Array> props;
+    if (obj->GetPropertyNames(context, v8::KeyCollectionMode::kOwnOnly,
+                              static_cast<v8::PropertyFilter>(
+                                  v8::ONLY_ENUMERABLE | v8::SKIP_SYMBOLS),
+                              v8::IndexFilter::kSkipIndices)
+            .ToLocal(&props)) {
+      auto out =
+          v8::Object::New(isolate, v8::Null(isolate), nullptr, nullptr, 0);
+      auto len = props->Length();
+      if (len > kMaxStateBreadth) {
+        // Collecting the keys costs O(len), so the keys that are not visited
+        // are charged to the budget as well
+        auto skipped = len - kMaxStateBreadth;
+        state.remaining_nodes -=
+            skipped < state.remaining_nodes ? skipped : state.remaining_nodes;
+      }
+
+      for (uint32_t i = 0; i < len && !state.terminating; ++i) {
+        v8::Local<v8::Value> key;
+        if (!props->Get(context, i).ToLocal(&key)) {
+          RecoverFromException(state);
+          continue;
+        }
+
+        if (!key->IsString()) {
+          // Skip symbol and non-string keys to match JSON behavior
+          continue;
+        }
+
+        auto key_str = key.As<v8::String>();
+        auto key_length = static_cast<uint32_t>(key_str->Length());
+        auto key_fits = key_length <= state.remaining_string_length;
+        state.remaining_string_length =
+            key_fits ? state.remaining_string_length - key_length : 0;
+
+        if (!key_fits || i >= kMaxStateBreadth || !TakeNode(state)) {
+          // Cut the object here. The marker takes this key, or "..." if the
+          // key itself does not fit into the string budget.
+          out->CreateDataProperty(context,
+                                  key_fits ? key_str : Marker(isolate, "..."),
+                                  Marker(isolate, "[MaxProperties ~]"))
+              .FromMaybe(false);
+          break;
+        }
+
+        v8::Local<v8::Value> val;
+        if (!obj->Get(context, key_str).ToLocal(&val)) {
+          RecoverFromException(state);
+          continue; // drop properties that cannot be read
+        }
+
+        auto sanitized = SanitizeForJSON(isolate, context, val, state);
+        if (!sanitized->IsUndefined()) {
+          out->CreateDataProperty(context, key_str, sanitized).FromMaybe(false);
+        }
+        // else: undefined -> drop property
+      }
+      result = out;
+    } else {
+      RecoverFromException(state); // drop objects whose keys cannot be read
+    }
   }
 
-  // Objects (including Dates, RegExps, Maps as objects; we only traverse
-  // enumerable own props)
-  if (value->IsObject()) {
-    auto obj = value.As<v8::Object>();
-    // Cycle detection
-    for (auto &a : ancestors) {
-      if (a->StrictEquals(obj)) {
-        return v8::Undefined(isolate);
-      }
-    }
-
-    ancestors.push_back(obj);
-
-    // Collect own enumerable property names (string-keyed)
-    auto maybe_props = obj->GetPropertyNames(context);
-    if (maybe_props.IsEmpty()) {
-      ancestors.pop_back();
-      return obj; // Nothing enumerable to sanitize
-    }
-
-    auto props = maybe_props.ToLocalChecked();
-    auto out = v8::Object::New(isolate);
-    auto len = props->Length();
-    for (uint32_t i = 0; i < len; ++i) {
-      auto maybeKey = props->Get(context, i);
-      if (maybeKey.IsEmpty())
-        continue;
-
-      auto key = maybeKey.ToLocalChecked();
-      if (!key->IsString()) {
-        // Skip symbol and non-string keys to match JSON behavior
-        continue;
-      }
-
-      auto maybeVal = obj->Get(context, key);
-      if (maybeVal.IsEmpty())
-        continue;
-
-      auto val = maybeVal.ToLocalChecked();
-      auto sanitized = SanitizeForJSON(isolate, context, val, ancestors);
-      if (!sanitized->IsUndefined()) {
-        out->Set(context, key, sanitized).Check();
-      }
-      // else: undefined -> drop property
-    }
-
-    ancestors.pop_back();
-    return out;
+  state.ancestors.pop_back();
+  if (state.terminating) {
+    return v8::Undefined(isolate);
   }
-
-  // Fallback: return as-is (shouldn't hit here for other exotic types)
-  return value;
+  return result;
 }
 
 std::string JSONStringify(Isolate *isolate, Local<Value> value) {
   auto context = isolate->GetCurrentContext();
 
+  // Exceptions thrown while reading the value (getters) are caught here, so
+  // they never reach the JavaScript running on this thread
+  v8::TryCatch try_catch(isolate);
+
   // Sanitize the value first to avoid JSON failures (e.g., BigInt, cycles)
-  std::vector<v8::Local<v8::Object>> ancestors;
-  auto sanitized = SanitizeForJSON(isolate, context, value, ancestors);
-  if (sanitized->IsUndefined()) {
-    // Nothing serializable
-    return "";
+  SanitizeState state(try_catch);
+  auto sanitized = SanitizeForJSON(isolate, context, value, state);
+
+  // Undefined: nothing serializable, or execution is terminating
+  std::string json;
+  v8::Local<v8::String> json_str;
+  if (!sanitized->IsUndefined() &&
+      v8::JSON::Stringify(context, sanitized).ToLocal(&json_str)) {
+    v8::String::Utf8Value utf8(isolate, json_str);
+    json = *utf8 ? *utf8 : "";
   }
 
-  auto maybe_json = v8::JSON::Stringify(context, sanitized);
-  if (maybe_json.IsEmpty()) {
-    return "";
-  }
-  v8::String::Utf8Value utf8(isolate, maybe_json.ToLocalChecked());
-  return *utf8 ? *utf8 : "";
+  KeepTermination(isolate, try_catch);
+  return json;
 }
 
 // Function to get stack frames from a V8 stack trace
@@ -352,7 +553,12 @@ static void ExecutionInterrupted(Isolate *isolate, void *data) {
 
 #if SUPPORTS_ASYNC_CONTEXT_FRAME
   if (args->store && args->store->has_value()) {
+    // Exceptions while reading the state (e.g. from getters or proxy traps on
+    // the stateLookup path) must not reach the interrupted JavaScript; the
+    // state is left empty or partial instead. Execution termination is kept.
+    TryCatch try_catch(isolate);
     state = GetThreadState(isolate, args->store->value());
+    KeepTermination(isolate, try_catch);
   }
 #endif
 
